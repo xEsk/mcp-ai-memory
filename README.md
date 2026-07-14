@@ -15,7 +15,7 @@ The server uses MCP over stdio. For desktop MCP clients, build the binary and ad
 
 ## Trace Monitor
 
-The MCP server can report tool calls to an optional local monitor without changing client configuration. Codex and other clients should continue to run `memory-mcp` directly.
+The MCP server can report tool calls to an optional local monitor without changing the configured MCP command. Codex and other clients should continue to run `memory-mcp` directly, but tracing must be enabled explicitly by adding `MEMORY_TRACE_MODE` to that process's environment.
 
 Tracing is off by default. Start the monitor when you want to inspect explicitly enabled trace events:
 

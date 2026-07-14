@@ -68,10 +68,19 @@ Every storage test must open a newly created database beneath that test's `t.Tem
 Run repository-wide tests through the filesystem-metadata guard:
 
 ```bash
-./scripts/verify-real-db-untouched.sh -- go test -race ./...
+./scripts/verify-real-db-untouched.sh -- go test -race -count=1 ./...
 ```
 
-The guard rejects command arguments that name the real database and compares only entry existence, inode, size, and timestamps for the database and sidecars before and after the command.
+The guard rejects normalized or embedded command arguments that name the real database, refuses `sh`, `bash`, and `zsh` indirection, and compares only entry existence, inode, size, permissions, and timestamps for the database and sidecars before and after the command. It is a metadata-change tripwire, not an operating-system audit of arbitrary executable reads. Completion proof must pair it with source inspection showing that every test database uses `t.TempDir()` and no test source names `data/memory.db`.
+
+Use these source checks when closing a phase:
+
+```bash
+rg -n 't\.TempDir\(\).*memory\.db' --glob '*_test.go' .
+rg -n 'data/memory\.db' --glob '*_test.go' .
+```
+
+The first command must list every test database path. The second must exit `1` with no matches.
 
 MCP client config examples live in `examples/`:
 

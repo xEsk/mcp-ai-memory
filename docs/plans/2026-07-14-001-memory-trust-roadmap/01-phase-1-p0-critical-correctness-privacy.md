@@ -62,7 +62,7 @@ After this phase:
 - `off` as the default trace mode.
 - An explicit metadata allowlist that excludes arguments, responses, search queries, project keys, memory content, and raw error text.
 - Explicit opt-in and loopback-only delivery for both metadata and raw tracing in Phase 1.
-- A repository verification guard that rejects real database paths in test commands and compares pre/post filesystem entry metadata for the ignored real database and sidecars without opening their contents.
+- A repository verification guard that rejects real database paths and common shell indirection in test commands, records only pre/post filesystem-entry metadata for the ignored real database and sidecars, and is paired with source inspection proving explicit temporary test paths.
 - Configuration, README, `.env.example`, and `docs/ai/` updates needed to make these contracts visible.
 
 ### Non-goals
@@ -253,13 +253,13 @@ Before a checkpoint is accepted, its filtered command must emit at least one mat
 ### Final sequence
 
 ```bash
-./scripts/verify-real-db-untouched.sh -- go test -race ./...
+./scripts/verify-real-db-untouched.sh -- go test -race -count=1 ./...
 go build ./cmd/memory-mcp
 go build ./cmd/memory-monitor
 git diff --check
 ```
 
-The guard must report unchanged entries for the real database and sidecars without reading their contents. Any test that needs a database must prove its path is under `t.TempDir()` or `/tmp`.
+The guard itself must report unchanged entries for the real database and sidecars without reading their contents. It is a metadata-change tripwire rather than an audit of arbitrary executable reads, so the same proof must list every test database path beneath `t.TempDir()` or `/tmp` and confirm that test sources do not name the protected path.
 
 ## 10. Recovery and operations
 
@@ -326,7 +326,7 @@ Update active documentation in English:
 - [x] README, `.env.example`, `docs/ai/`, and Project Memory agree with runtime behavior.
 - [x] Full race-enabled tests and both builds pass.
 - [x] `git diff --check` passes.
-- [x] The pre/post filesystem-entry guard reports the real database and sidecars unchanged without opening their contents.
+- [x] The guard reports the real database and sidecars unchanged, while source inspection proves explicit `t.TempDir()` paths and no protected-path reference in test code.
 - [x] No schema, migration, reindex, or real-data test was introduced.
 
 ### Completion evidence — 2026-07-14
@@ -334,12 +334,14 @@ Update active documentation in English:
 - Delete RED: missing, repeated, and wrong-project cases retained one connection and timed out on the bounded follow-up operation before unconditional rollback cleanup. The same focal suite passed after the fix, including successful commit and forced FTS-failure rollback.
 - Ranking RED: the ten weights were shifted by the two `UNINDEXED` positions, producing the wrong relative bands. The real-schema `t.TempDir()` fixture passed after adding the two neutral placeholders without retuning weights.
 - Trace RED: the new mode, metadata-policy, invalid-mode, redirect, and effective-peer contracts failed to compile against the previous always-raw assembly. The focal app, MCP wrapper, trace sink, and monitor suites passed after implementation.
-- Final: `./scripts/verify-real-db-untouched.sh -- go test -race ./...`, both documented `go build` commands, and `git diff --check` exited zero. The guard reported unchanged entry metadata for the real database and sidecars.
+- Final: `./scripts/verify-real-db-untouched.sh -- go test -race -count=1 ./...`, both documented `go build` commands, and `git diff --check` exited zero. The guard reported unchanged entry metadata for the real database and sidecars.
 - Database fixtures: every new storage test opens `filepath.Join(t.TempDir(), "memory.db")`; no construction or verification command opened or copied `data/memory.db`.
-- Review: the critical correctness review and full final review found no unresolved runtime finding. The guard path-normalization finding was reproduced RED, fixed, and independently re-reviewed clean.
+- Review: the critical correctness review found no unresolved runtime issue. The closeout review identified an indirect-command gap in the guard, a contradictory BM25 Project Memory entry, missing durable transcripts, and a stale Phase 2 baseline; the repository items are closed by [Phase 1 completion evidence](phase-1-completion-evidence.md), and the memory/baseline items are closed in the formal acceptance handoff.
 - Durable memory: SoftDelete `1e05cfae-49a8-4390-9ef4-d79ae109e6fe`, BM25 mapping `616289c9-cdc8-4ece-a01f-d09e1e4131f9`, and trace privacy `0df59dda-14fd-42c0-9329-10ccfa265d17`.
 
 ### Completion Proof
+
+The auditable command transcript, RED reproductions, GREEN focal runs, source-level temporary-path proof, and final verification are stored in [Phase 1 completion evidence](phase-1-completion-evidence.md).
 
 Phase 1 is complete only when the implementation handoff contains:
 

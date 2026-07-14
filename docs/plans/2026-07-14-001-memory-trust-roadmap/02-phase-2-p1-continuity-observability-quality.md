@@ -298,14 +298,14 @@ Each filtered command is also captured with `go test -json`; completion proof mu
 ### Final sequence
 
 ```bash
-./scripts/verify-real-db-untouched.sh -- go test -race ./...
+./scripts/verify-real-db-untouched.sh -- go test -race -count=1 ./...
 go build ./cmd/memory-mcp
 go build ./cmd/memory-monitor
 go build ./cmd/memory-maintenance
 git diff --check
 ```
 
-The guard must report unchanged filesystem entries for the real database and sidecars without opening their contents. Test logs must identify temporary database paths and the quality report must show aggregate and per-slice metrics.
+The guard itself must report unchanged filesystem entries for the real database and sidecars without opening their contents. Source inspection must separately identify every temporary database path and confirm that test code does not name the protected path; the quality report must show aggregate and per-slice metrics.
 
 ## 10. Recovery and operations
 
@@ -381,7 +381,7 @@ If any condition fails, stop without writes. Unknown/partial shape, checksum dri
 - [ ] Project leakage is zero and all quality gates pass.
 - [ ] Full race-enabled tests and three binaries build.
 - [ ] Documentation and Project Memory agree with runtime behavior.
-- [ ] The pre/post filesystem-entry guard reports the real database and sidecars unchanged during automated verification without opening their contents.
+- [ ] The guard reports the real database and sidecars unchanged, and source inspection proves explicit temporary test paths with no protected-path reference.
 
 Completion proof includes RED/GREEN focal output, fixture paths, before/after schema and ledger assertions, snapshot manifest and integrity evidence from synthetic fixtures, restore/rebuild failure evidence, quality reports, and the final verification output.
 

@@ -253,14 +253,14 @@ Each filtered boundary is also captured with `go test -json`; completion proof r
 ### Final sequence
 
 ```bash
-./scripts/verify-real-db-untouched.sh -- go test -race ./...
+./scripts/verify-real-db-untouched.sh -- go test -race -count=1 ./...
 go build ./cmd/memory-mcp
 go build ./cmd/memory-monitor
 go build ./cmd/memory-maintenance
 git diff --check
 ```
 
-The quality report must include global and per-slice before/after values. The guard must report unchanged filesystem entries for the real database and sidecars without opening their contents.
+The quality report must include global and per-slice before/after values. The guard itself must report unchanged filesystem entries for the real database and sidecars without opening their contents, while source inspection separately proves explicit temporary paths and absence of protected-path references.
 
 ## 9. Data, migration, recovery, and privacy
 
@@ -335,7 +335,7 @@ Update active English documentation:
 - [ ] Phase 2 aggregate/slice gates pass without relaxed thresholds.
 - [ ] Full race-enabled tests and required binaries build.
 - [ ] Active docs and Project Memory match implemented behavior.
-- [ ] The pre/post filesystem-entry guard reports the real database and sidecars unchanged during automated verification without opening their contents.
+- [ ] The guard reports the real database and sidecars unchanged, and source inspection proves explicit temporary test paths with no protected-path reference.
 
 Completion proof contains pre-fix RED outputs, post-fix focal GREEN outputs, before/after quality reports, project-leakage and suggestion-precision results, DTO sentinel checks, exact debug attribution fixtures, the final verification output, and temporary fixture paths.
 

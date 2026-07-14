@@ -49,6 +49,20 @@ is_protected_path() {
 }
 
 for argument in "$@"; do
+	case "$argument" in
+	*"$protected_relative_path"* | *"$protected_absolute_path"*)
+		echo "refusing command argument that contains the real database path: $argument" >&2
+		exit 2
+		;;
+	esac
+
+	case "$(basename -- "$argument")" in
+	sh | bash | zsh)
+		echo "refusing shell interpreter indirection in guarded command: $argument" >&2
+		exit 2
+		;;
+	esac
+
 	if normalized_argument=$(normalize_path_argument "$argument") && is_protected_path "$normalized_argument"; then
 		echo "refusing command that references the real database: $argument" >&2
 		exit 2
