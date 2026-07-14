@@ -181,6 +181,8 @@ Tag filters currently use `COALESCE(e.tags_json, '[]') LIKE ?`. This is a simple
 
 Search uses SQLite FTS5 `bm25`.
 
+The FTS table positions begin with the two `UNINDEXED` columns `memory_id` and `project_key`. The `bm25` call therefore supplies two leading neutral placeholders before the ten indexed-field weights below; FTS5 applies all weights positionally.
+
 Weights are configured in `internal/search/fts.go`:
 
 - `type`: `6.0`
@@ -337,6 +339,8 @@ Because it calls `Search`, current v1 behavior records access metrics for candid
 `memory.delete` calls `memory.Service.Delete`, which resolves project ownership and delegates to `Repository.SoftDelete`.
 
 `SoftDelete` starts a transaction.
+
+After the transaction starts, cleanup always attempts rollback on every return path. A successful commit makes that rollback a harmless `sql.ErrTxDone`; missing, repeated, and wrong-project deletes return `ErrNotFound` without retaining the sole SQLite connection.
 
 It sets `deleted_at` and `updated_at` on the `memories` row when the row belongs to the project and is not already deleted.
 

@@ -22,6 +22,8 @@ The default path must work locally without API keys. The heuristic enricher is t
 
 The server speaks MCP over stdio. Do not write normal logs to stdout because stdout is protocol transport.
 
+Tracing must require explicit payload consent. Keep `off` as the default; `metadata` is a closed non-sensitive allowlist, while `raw` is an explicit confidentiality decision. Enabled trace delivery is loopback-only, asynchronous, non-blocking, fail-silent, and must not follow redirects.
+
 Memory read paths that return memories to clients should update usage metrics. This lets future agents identify whether stored memories are actually used.
 
 Normal MCP responses should not leak internal retrieval machinery. Keep summaries, keywords, entities, aliases, search phrases, snippets, scores, and match explanations internal unless adding an explicit debug tool.

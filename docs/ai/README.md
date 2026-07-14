@@ -44,6 +44,10 @@ Keep the server local-first and simple. Prefer explicit services, repositories, 
 
 New features should extend existing package boundaries before introducing new layers. Preserve the single-binary shape unless the user explicitly asks for a different runtime model.
 
+## Current Plans
+
+- [Memory Trust Roadmap](../plans/2026-07-14-001-memory-trust-roadmap/README.md): three ordered specifications covering P0 correctness/privacy, P1 continuity/operability/evidence, and P2 retrieval quality/debuggability. Phase 1 implementation and completion proof are complete; Phase 2 has not started and remains gated on explicit owner acceptance of Phase 1.
+
 ## Choose Documentation By Task
 
 Need MCP tool changes:

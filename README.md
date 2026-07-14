@@ -17,7 +17,7 @@ The server uses MCP over stdio. For desktop MCP clients, build the binary and ad
 
 The MCP server can report tool calls to an optional local monitor without changing client configuration. Codex and other clients should continue to run `memory-mcp` directly.
 
-Start the monitor when you want to inspect requests and responses:
+Tracing is off by default. Start the monitor when you want to inspect explicitly enabled trace events:
 
 ```bash
 go run ./cmd/memory-monitor
@@ -33,9 +33,16 @@ If the monitor is not running, the MCP server ignores trace delivery failures an
 
 Trace configuration:
 
+- `MEMORY_TRACE_MODE`: `off`, `metadata`, or `raw`; default `off`. An invalid value prevents startup.
 - `MEMORY_TRACE_MONITOR_URL`: monitor event endpoint, default `http://127.0.0.1:7379/events`.
 - `MEMORY_TRACE_BUFFER_SIZE`: async trace queue size, default `256`.
 - `MEMORY_TRACE_DEBUG`: when `true`, trace delivery errors are written to stderr.
+
+`metadata` sends only tool name, phase, duration, session identifier, process identifier, and a non-sensitive status classification. It never sends tool arguments, responses, search queries, project keys, memory content, or raw error text.
+
+`raw` sends full tool arguments, responses, and errors. **Raw traces may contain confidential project data. Enable this mode only when that disclosure is intentional.**
+
+Both enabled modes accept only loopback endpoints: the exact hostname `localhost` or a literal loopback IP address. Redirects and connections that resolve or dial outside loopback are rejected. Setting `MEMORY_TRACE_MONITOR_URL` alone does not enable tracing. Restart the MCP server or its client after changing trace environment variables.
 
 ## OpenCode
 

@@ -42,13 +42,16 @@ Runtime config comes from environment variables:
 - `MEMORY_EMBEDDINGS_ENABLED`: currently reserved for future hybrid search wiring.
 - `MEMORY_EMBEDDING_BASE_URL`: embedding provider base URL.
 - `MEMORY_EMBEDDING_MODEL`: embedding model.
-- `MEMORY_TRACE_MONITOR_URL`: optional local trace monitor endpoint, default `http://127.0.0.1:7379/events`.
+- `MEMORY_TRACE_MODE`: `off`, `metadata`, or `raw`; default `off`.
+- `MEMORY_TRACE_MONITOR_URL`: local trace monitor endpoint, default `http://127.0.0.1:7379/events`. A URL alone does not enable tracing.
 - `MEMORY_TRACE_BUFFER_SIZE`: non-blocking trace queue size, default `256`.
 - `MEMORY_TRACE_DEBUG`: write trace delivery errors to stderr when `true`, default `false`.
 
 ## Trace Monitor
 
-The MCP server always keeps stdio reserved for protocol traffic. Tool-call tracing is delivered through `internal/trace` to an optional local monitor over HTTP. Delivery is asynchronous and fail-silent: if the monitor is closed, unreachable, slow, or returns an error, MCP behavior must remain unchanged.
+The MCP server always keeps stdio reserved for protocol traffic. Tracing is off by default and is delivered through `internal/trace` to an optional local monitor over HTTP only after `MEMORY_TRACE_MODE` is explicitly set to `metadata` or `raw`. Delivery is asynchronous and fail-silent: if the monitor is closed, unreachable, slow, or returns an error, MCP behavior must remain unchanged.
+
+Metadata mode emits only the documented operational allowlist and excludes arguments, responses, queries, project keys, memory content, and raw errors. Raw mode emits full debugging payloads and must be treated as confidential. Both enabled modes require an exact `localhost` or literal loopback-IP endpoint, reject redirects, and verify the connected address remains loopback. Restart the MCP server or its client after changing trace configuration.
 
 Run the monitor manually when needed:
 
@@ -57,6 +60,18 @@ go run ./cmd/memory-monitor
 ```
 
 Then open `http://127.0.0.1:7379`. MCP clients such as Codex should continue to execute `memory-mcp` directly; do not configure clients to execute the monitor instead.
+
+## Safe Database Verification
+
+Every storage test must open a newly created database beneath that test's `t.TempDir()`. Never use, copy, hash, or open `data/memory.db` or its sidecars in automated tests or smoke commands.
+
+Run repository-wide tests through the filesystem-metadata guard:
+
+```bash
+./scripts/verify-real-db-untouched.sh -- go test -race ./...
+```
+
+The guard rejects command arguments that name the real database and compares only entry existence, inode, size, and timestamps for the database and sidecars before and after the command.
 
 MCP client config examples live in `examples/`:
 

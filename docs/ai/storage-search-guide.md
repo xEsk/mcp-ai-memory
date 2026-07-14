@@ -45,9 +45,11 @@ FTS indexes:
 
 Search supports three modes. `precise` is the default and removes common stopwords before requiring all remaining terms. `balanced` removes common stopwords but keeps OR matching. `broad` stays close to the original expansion behavior with OR prefix matching.
 
-Ranking uses SQLite `bm25` with higher weight on title and enriched retrieval fields.
+Ranking uses SQLite `bm25`. Because `memory_id` and `project_key` occupy the first two FTS column positions even though they are `UNINDEXED`, the query supplies two leading neutral placeholders before the documented weights for `type` through `content`.
 
 Results are ordered by rank, then `importance`, then `updated_at`.
+
+A synthetic temporary-database ranking fixture exercises the real schema and `FTS.Search` and asserts relative field ordering rather than SQLite-version-specific floating-point scores. The correction is query-time only, so it requires no schema migration, FTS rebuild, or re-enrichment.
 
 ## How To Extend Existing Code
 
