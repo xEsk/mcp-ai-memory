@@ -140,11 +140,7 @@ func (r *Repository) SoftDelete(ctx context.Context, projectID, id string, delet
 	if err != nil {
 		return fmt.Errorf("starting delete transaction: %w", err)
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
+	defer func() { _ = tx.Rollback() }()
 
 	result, err := tx.ExecContext(ctx, `
 		UPDATE memories
