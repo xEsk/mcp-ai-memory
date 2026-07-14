@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -61,7 +63,10 @@ func TestMonitorSinkPostsEvents(t *testing.T) {
 	}))
 	defer server.Close()
 
-	sink := NewMonitorSink(server.URL+"/events", 100*time.Millisecond, false)
+	sink, err := NewMonitorSink(server.URL+"/events", 100*time.Millisecond, false)
+	if err != nil {
+		t.Fatalf("new monitor sink: %v", err)
+	}
 	sink.Emit(context.Background(), Event{
 		SessionID: "session-1",
 		Tool:      "memory.search",
@@ -83,7 +88,10 @@ func TestMonitorSinkPostsEvents(t *testing.T) {
 }
 
 func TestMonitorSinkIgnoresConnectionErrors(t *testing.T) {
-	sink := NewMonitorSink("http://127.0.0.1:1/events", time.Millisecond, false)
+	sink, err := NewMonitorSink("http://127.0.0.1:1/events", time.Millisecond, false)
+	if err != nil {
+		t.Fatalf("new monitor sink: %v", err)
+	}
 
 	done := make(chan struct{})
 	go func() {
@@ -105,12 +113,85 @@ func TestMonitorSinkIgnoresTimeouts(t *testing.T) {
 	}))
 	defer server.Close()
 
-	sink := NewMonitorSink(server.URL+"/events", time.Millisecond, false)
+	sink, err := NewMonitorSink(server.URL+"/events", time.Millisecond, false)
+	if err != nil {
+		t.Fatalf("new monitor sink: %v", err)
+	}
 	start := time.Now()
 	sink.Emit(context.Background(), Event{Tool: "memory.search", Phase: PhaseRequest})
 
 	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
 		t.Fatalf("monitor sink took %s, want short timeout", elapsed)
+	}
+}
+
+func TestMonitorSinkRejectsNonLoopbackEndpoints(t *testing.T) {
+	for _, endpoint := range []string{
+		"http://example.com/events",
+		"http://192.0.2.1/events",
+		"http://[2001:db8::1]/events",
+		"http://localhost.example/events",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			if _, err := NewMonitorSink(endpoint, time.Second, false); err == nil {
+				t.Fatalf("NewMonitorSink(%q) succeeded", endpoint)
+			}
+		})
+	}
+}
+
+func TestMonitorSinkAcceptsLiteralLoopbackAndExactLocalhostEndpoints(t *testing.T) {
+	for _, endpoint := range []string{
+		"http://localhost:7379/events",
+		"http://127.0.0.1:7379/events",
+		"http://[::1]:7379/events",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			if _, err := NewMonitorSink(endpoint, time.Second, false); err != nil {
+				t.Fatalf("NewMonitorSink(%q): %v", endpoint, err)
+			}
+		})
+	}
+}
+
+func TestMonitorSinkDoesNotFollowRedirects(t *testing.T) {
+	targetHits := 0
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		targetHits++
+	}))
+	defer target.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/events", http.StatusTemporaryRedirect)
+	}))
+	defer redirect.Close()
+
+	sink, err := NewMonitorSink(redirect.URL+"/events", time.Second, false)
+	if err != nil {
+		t.Fatalf("new monitor sink: %v", err)
+	}
+	sink.Emit(context.Background(), Event{Tool: "memory.search", Phase: PhaseRequest})
+
+	if targetHits != 0 {
+		t.Fatalf("redirect target hits = %d, want 0", targetHits)
+	}
+}
+
+func TestMonitorSinkRejectsNonLoopbackEffectiveDialAddress(t *testing.T) {
+	connection := &stubConn{remote: &net.TCPAddr{IP: net.ParseIP("192.0.2.10"), Port: 7379}}
+	sink, err := newMonitorSink(
+		"http://localhost:7379/events",
+		time.Second,
+		false,
+		func(context.Context, string, string) (net.Conn, error) { return connection, nil },
+	)
+	if err != nil {
+		t.Fatalf("new monitor sink: %v", err)
+	}
+
+	sink.Emit(context.Background(), Event{Tool: "memory.search", Phase: PhaseRequest})
+
+	if !connection.closed {
+		t.Fatal("non-loopback connection was not closed")
 	}
 }
 
@@ -158,3 +239,17 @@ func TestMonitorSinkJSONShape(t *testing.T) {
 		t.Fatalf("encoded event does not include session_id: %s", buf.String())
 	}
 }
+
+type stubConn struct {
+	closed bool
+	remote net.Addr
+}
+
+func (*stubConn) Read([]byte) (int, error)         { return 0, errors.New("not implemented") }
+func (*stubConn) Write([]byte) (int, error)        { return 0, errors.New("not implemented") }
+func (c *stubConn) Close() error                   { c.closed = true; return nil }
+func (*stubConn) LocalAddr() net.Addr              { return &net.TCPAddr{} }
+func (c *stubConn) RemoteAddr() net.Addr           { return c.remote }
+func (*stubConn) SetDeadline(time.Time) error      { return nil }
+func (*stubConn) SetReadDeadline(time.Time) error  { return nil }
+func (*stubConn) SetWriteDeadline(time.Time) error { return nil }

@@ -61,6 +61,7 @@ func (s *Server) traceTool(name string, handler toolHandler) toolHandler {
 		s.tracer.Emit(ctx, trace.Event{
 			Tool:      name,
 			Phase:     trace.PhaseRequest,
+			Status:    trace.StatusStarted,
 			Arguments: request.GetArguments(),
 		})
 		result, err := handler(ctx, request)
@@ -68,15 +69,18 @@ func (s *Server) traceTool(name string, handler toolHandler) toolHandler {
 			Tool:       name,
 			Phase:      trace.PhaseResponse,
 			DurationMS: time.Since(start).Milliseconds(),
+			Status:     trace.StatusSuccess,
 		}
 		if err != nil {
 			event.Phase = trace.PhaseError
+			event.Status = trace.StatusTechnicalError
 			event.Error = err.Error()
 			s.tracer.Emit(ctx, event)
 			return result, err
 		}
 		if result != nil && result.IsError {
 			event.Phase = trace.PhaseError
+			event.Status = trace.StatusToolError
 			event.Error = toolResultErrorText(result)
 		} else if result != nil {
 			event.Response = result.StructuredContent

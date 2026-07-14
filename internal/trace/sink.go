@@ -16,6 +16,31 @@ type NoopSink struct{}
 // Emit discards the event.
 func (NoopSink) Emit(context.Context, Event) {}
 
+// MetadataSink forwards only the fixed non-sensitive trace metadata allowlist.
+type MetadataSink struct {
+	inner Sink
+}
+
+// NewMetadataSink creates a sink that removes raw tool payloads and error text.
+func NewMetadataSink(inner Sink) *MetadataSink {
+	if inner == nil {
+		inner = NoopSink{}
+	}
+	return &MetadataSink{inner: inner}
+}
+
+// Emit forwards only tool, phase, duration, session, process, and status metadata.
+func (s *MetadataSink) Emit(ctx context.Context, event Event) {
+	s.inner.Emit(ctx, Event{
+		SessionID:  event.SessionID,
+		PID:        event.PID,
+		Tool:       event.Tool,
+		Phase:      event.Phase,
+		DurationMS: event.DurationMS,
+		Status:     event.Status,
+	})
+}
+
 // MultiSink fans events out to multiple sinks.
 type MultiSink []Sink
 

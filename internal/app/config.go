@@ -5,6 +5,12 @@ import (
 	"strconv"
 )
 
+const (
+	TraceModeOff      = "off"
+	TraceModeMetadata = "metadata"
+	TraceModeRaw      = "raw"
+)
+
 // Config contains the server configuration loaded from environment variables.
 type Config struct {
 	DBPath            string
@@ -15,6 +21,7 @@ type Config struct {
 	EmbeddingsEnabled bool
 	EmbeddingBaseURL  string
 	EmbeddingModel    string
+	TraceMode         string
 	TraceMonitorURL   string
 	TraceBufferSize   int
 	TraceDebug        bool
@@ -31,6 +38,7 @@ func LoadConfig() Config {
 		EmbeddingsEnabled: envBool("MEMORY_EMBEDDINGS_ENABLED", false),
 		EmbeddingBaseURL:  envString("MEMORY_EMBEDDING_BASE_URL", "http://localhost:11434"),
 		EmbeddingModel:    envString("MEMORY_EMBEDDING_MODEL", "nomic-embed-text"),
+		TraceMode:         envString("MEMORY_TRACE_MODE", TraceModeOff),
 		TraceMonitorURL:   envString("MEMORY_TRACE_MONITOR_URL", "http://127.0.0.1:7379/events"),
 		TraceBufferSize:   envInt("MEMORY_TRACE_BUFFER_SIZE", 256),
 		TraceDebug:        envBool("MEMORY_TRACE_DEBUG", false),

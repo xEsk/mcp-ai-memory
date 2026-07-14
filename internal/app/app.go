@@ -25,6 +25,9 @@ type App struct {
 
 // New builds the full application from configuration.
 func New(ctx context.Context, cfg Config) (*App, error) {
+	if err := validateTraceConfig(cfg); err != nil {
+		return nil, err
+	}
 	db, err := storage.OpenSQLite(ctx, cfg.DBPath)
 	if err != nil {
 		return nil, err
@@ -34,7 +37,11 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	enricher := buildEnricher(cfg)
 	memoryService := memory.NewService(memory.NewRepository(db), projectService, enricher, clock)
 	searchService := search.NewService(search.NewFTS(db))
-	tracer := buildTraceSink(cfg)
+	tracer, err := buildTraceSink(cfg)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	server := mcpserver.New(projectService, memoryService, searchService, tracer)
 
 	return &App{DB: db, Server: server}, nil
@@ -58,9 +65,37 @@ func buildEnricher(cfg Config) enrich.Enricher {
 	return enrich.NewLocalHeuristicEnricher()
 }
 
-func buildTraceSink(cfg Config) trace.Sink {
-	monitor := trace.NewMonitorSink(cfg.TraceMonitorURL, 25*time.Millisecond, cfg.TraceDebug)
+func buildTraceSink(cfg Config) (trace.Sink, error) {
+	if cfg.TraceMode == TraceModeOff {
+		return trace.NoopSink{}, nil
+	}
+	if err := validateTraceConfig(cfg); err != nil {
+		return nil, err
+	}
+	monitor, err := trace.NewMonitorSink(cfg.TraceMonitorURL, 25*time.Millisecond, cfg.TraceDebug)
+	if err != nil {
+		return nil, fmt.Errorf("build trace monitor sink: %w", err)
+	}
 	async := trace.NewAsyncSink(monitor, cfg.TraceBufferSize)
 	sessionID := fmt.Sprintf("%d-%d", time.Now().UTC().UnixNano(), os.Getpid())
-	return trace.NewSessionSink(sessionID, os.Getpid(), async)
+	var sink trace.Sink = async
+	if cfg.TraceMode == TraceModeMetadata {
+		sink = trace.NewMetadataSink(sink)
+	}
+	return trace.NewSessionSink(sessionID, os.Getpid(), sink), nil
+}
+
+// validateTraceConfig validates explicit trace consent before runtime resources are opened.
+func validateTraceConfig(cfg Config) error {
+	switch cfg.TraceMode {
+	case TraceModeOff:
+		return nil
+	case TraceModeMetadata, TraceModeRaw:
+		if err := trace.ValidateMonitorURL(cfg.TraceMonitorURL); err != nil {
+			return fmt.Errorf("validate trace monitor URL: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid trace mode %q: must be off, metadata, or raw", cfg.TraceMode)
+	}
 }
