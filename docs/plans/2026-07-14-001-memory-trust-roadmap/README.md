@@ -6,6 +6,10 @@ This roadmap turns the current local-memory server into a trustworthy foundation
 
 The design baseline is repository `mcp-ai-memory` at commit `f56c19430c986cd9c758a3050954772d1eecaf83` on `main`. The phase documents are specifications for review; they do not authorize implementation by themselves.
 
+## Current status
+
+Phase 1 was accepted on 2026-07-14 at implementation baseline `039f7c236096d94dfb6154cb0a4256b727afa9dd`. Its auditable closeout is recorded in [Phase 1 completion evidence](phase-1-completion-evidence.md). Phase 2 has not started; it must begin on a new dedicated `codex/` branch from the accepted handoff and retain the real-data C1/C2/C3 Stop Gates.
+
 ## Execution order
 
 | Order | Priority and specification | Contains | Entry gate | Exit gate |
@@ -53,4 +57,4 @@ Roadmap entry requires approved specifications, confirmation of the execution ba
 
 A phase exits only when its documented acceptance criteria are met, focal and full scoped verification pass, operational documentation and durable project knowledge match the implementation, automated verification leaves the real database untouched, and review accepts the completion proof. Any separately authorized Phase 2 C1/C2/C3 operation is reported as an explicit operational event, never hidden inside completion tests. The roadmap exits only after all three phases are accepted, recovery has been rehearsed, the quality gates pass, and runtime behavior, documentation, and Project Memory agree.
 
-After this roadmap and its specifications are approved, hand off **Phase 1 only** to `implement-project-phase`. That workflow must execute and review one phase at a time; it must not skip gates or begin a later phase implicitly. Each accepted phase produces the explicit authorization to hand off the next phase.
+Phase 1 has completed the `implement-project-phase` workflow and is accepted. Phase 2 is now eligible for a separate explicit implementation handoff; that workflow must continue to execute and review one phase at a time, must not skip gates, and must not begin Phase 3 implicitly.

@@ -2,7 +2,7 @@
 
 ## Scope and safety
 
-This transcript closes Phase 1 at repository state `fbfce0028a73265c4093427b777305e7d0b6bebf` plus the Phase 1 closeout commit recorded in the final section.
+This transcript closes Phase 1 at accepted implementation baseline `039f7c236096d94dfb6154cb0a4256b727afa9dd`. The runtime fixes entered on commits `57ff78b`, `940f5aa`, and `412bc4a`; the closeout baseline adds the guard hardening and durable evidence without changing product runtime behavior.
 
 The RED reproductions used source-only trees beneath `/tmp/mcp-ai-memory-phase1-closeout-red`. Each tree came from `git archive HEAD`; only the relevant production-file diff was reversed, while the regression tests stayed unchanged. The trees contained no `.git` directory and no database copied from the repository. All SQLite tests created their own database beneath `t.TempDir()`.
 
@@ -232,4 +232,4 @@ go build -o /tmp/mcp-ai-memory-phase1-closeout-monitor ./cmd/memory-monitor
 git diff --check
 ```
 
-Each command exited `0` with no diagnostic output. The final accepted Phase 1 implementation baseline is recorded in the Phase 1 specification and the Phase 2 handoff after the closeout commit is created.
+Each command exited `0` with no diagnostic output. The accepted Phase 1 implementation baseline is `039f7c236096d94dfb6154cb0a4256b727afa9dd`; the Phase 1 specification, roadmap status, and Phase 2 handoff all use this same identity.

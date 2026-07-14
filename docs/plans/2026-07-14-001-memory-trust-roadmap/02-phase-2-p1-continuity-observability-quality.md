@@ -23,8 +23,8 @@ Phase 1 must be fully implemented and accepted before any Phase 2 slice begins. 
 ### Execution baseline
 
 - Repository: `mcp-ai-memory`
-- Baseline commit: `f56c19430c986cd9c758a3050954772d1eecaf83`
-- Branch at design time: `main`
+- Accepted Phase 1 implementation baseline: `039f7c236096d94dfb6154cb0a4256b727afa9dd`
+- Branch requirement: create a new dedicated `codex/` Phase 2 branch from the accepted handoff; do not continue implementation on the Phase 1 closeout branch.
 - Real database: `data/memory.db` contains real project data and must not be opened, copied, classified, migrated, or rebuilt during construction or automated verification.
 - All database fixtures must live under `t.TempDir()`; no fixture may be derived from real rows.
 

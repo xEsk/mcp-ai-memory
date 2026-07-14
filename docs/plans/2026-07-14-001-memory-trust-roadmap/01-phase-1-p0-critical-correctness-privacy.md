@@ -24,6 +24,14 @@ After this phase:
 - IDE index: unavailable because this repository was not open in the configured JetBrains instance; evidence was verified with bounded source reads and focal commands.
 - Real database: `data/memory.db` exists and contains real project data. It is forbidden for construction and verification.
 
+### Accepted exit
+
+- Owner acceptance date: 2026-07-14
+- Accepted implementation baseline: `039f7c236096d94dfb6154cb0a4256b727afa9dd`
+- Closeout branch: `codex/phase-1-closeout`
+- Auditable proof: [Phase 1 completion evidence](phase-1-completion-evidence.md)
+- Phase 2 status: not started; eligible for a dedicated `codex/` branch from the accepted handoff.
+
 ### Required Reading
 
 - [AI knowledge index](../../ai/README.md)
@@ -341,7 +349,7 @@ Update active documentation in English:
 
 ### Completion Proof
 
-The auditable command transcript, RED reproductions, GREEN focal runs, source-level temporary-path proof, and final verification are stored in [Phase 1 completion evidence](phase-1-completion-evidence.md).
+The auditable command transcript, RED reproductions, GREEN focal runs, source-level temporary-path proof, and final verification are stored in [Phase 1 completion evidence](phase-1-completion-evidence.md). All seven required handoff items below are present there or in the linked operational documentation and durable Project Memory entries.
 
 Phase 1 is complete only when the implementation handoff contains:
 
