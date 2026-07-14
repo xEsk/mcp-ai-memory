@@ -1,0 +1,93 @@
+# MCP IA Memory
+
+Local-first MCP server for project-specific technical memory.
+
+It stores memories per project, enriches them for AI retrieval, and searches them with SQLite FTS5. The goal is to help coding agents preserve architecture, decisions, APIs, conventions, bugs, workflows, and technical context across sessions.
+
+## Run
+
+```bash
+cp .env.example .env
+go run ./cmd/memory-mcp
+```
+
+The server uses MCP over stdio. For desktop MCP clients, build the binary and adapt `examples/claude_desktop_config.json`.
+
+## Trace Monitor
+
+The MCP server can report tool calls to an optional local monitor without changing client configuration. Codex and other clients should continue to run `memory-mcp` directly.
+
+Start the monitor when you want to inspect requests and responses:
+
+```bash
+go run ./cmd/memory-monitor
+```
+
+Then open:
+
+```text
+http://127.0.0.1:7379
+```
+
+If the monitor is not running, the MCP server ignores trace delivery failures and continues normally. The MCP stdio transport remains reserved for protocol messages; trace diagnostics never write to stdout from `memory-mcp`.
+
+Trace configuration:
+
+- `MEMORY_TRACE_MONITOR_URL`: monitor event endpoint, default `http://127.0.0.1:7379/events`.
+- `MEMORY_TRACE_BUFFER_SIZE`: async trace queue size, default `256`.
+- `MEMORY_TRACE_DEBUG`: when `true`, trace delivery errors are written to stderr.
+
+## OpenCode
+
+Build the MCP server binary first:
+
+```bash
+go build -o memory-mcp ./cmd/memory-mcp
+go build -o memory-monitor ./cmd/memory-monitor
+```
+
+Then adapt `examples/opencode.json` with absolute paths for your machine. OpenCode config can live in a project config such as `./opencode.json` or `.opencode/opencode.json`, or in the global config at `~/.config/opencode/opencode.json`.
+
+Minimal MCP entry:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "project-memory": {
+      "type": "local",
+      "command": ["/absolute/path/to/memory-mcp"],
+      "enabled": true,
+      "env": {
+        "MEMORY_DB_PATH": "/absolute/path/to/memory.db",
+        "MEMORY_ENRICHER": "heuristic"
+      }
+    }
+  }
+}
+```
+
+OpenCode loads config at startup, so quit and restart OpenCode after changing the MCP config.
+
+## Tools
+
+- `project.upsert`
+- `project.list`
+- `memory.upsert`
+- `memory.search`
+- `memory.search.count`
+- `memory.search.debug`
+- `memory.get`
+- `memory.list`
+- `memory.delete`
+- `memory.suggest`
+
+All memory tools require `project` to avoid cross-project context leakage.
+
+## Documentation
+
+AI-first operational memory lives in `docs/ai/`. Future coding agents should start with `docs/ai/README.md`.
+
+## Redistributable Skill
+
+The Codex skill for this MCP server lives in `skills/project-memory-mcp/` so it can be redistributed with the repository.

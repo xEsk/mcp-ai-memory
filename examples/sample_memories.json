@@ -1,0 +1,11 @@
+[
+  {
+    "project": "example-api",
+    "type": "architecture",
+    "title": "HTTP routes are registered in internal/server",
+    "content": "Handlers are wired in internal/server/router.go. Repository dependencies are injected through service constructors.",
+    "tags": ["backend", "api"],
+    "importance": 3,
+    "enrich": true
+  }
+]

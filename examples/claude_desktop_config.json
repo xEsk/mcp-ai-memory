@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "project-memory": {
+      "command": "/absolute/path/to/memory-mcp",
+      "env": {
+        "MEMORY_DB_PATH": "/absolute/path/to/memory.db",
+        "MEMORY_ENRICHER": "heuristic"
+      }
+    }
+  }
+}

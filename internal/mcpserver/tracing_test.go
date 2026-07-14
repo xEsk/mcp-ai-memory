@@ -1,0 +1,99 @@
+package mcpserver
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/mark3labs/mcp-go/mcp"
+	"mcp-ai-memory/internal/trace"
+)
+
+func TestTraceToolEmitsRequestAndResponse(t *testing.T) {
+	sink := &recordingTraceSink{}
+	server := &Server{tracer: trace.NewSessionSink("session-1", 42, sink)}
+	handler := server.traceTool("memory.search", func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultStructuredOnly(map[string]any{"ok": true}), nil
+	})
+
+	result, err := handler(context.Background(), mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Arguments: map[string]any{"project": "api"}},
+	})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if result.IsError {
+		t.Fatal("handler returned tool error")
+	}
+	if len(sink.events) != 2 {
+		t.Fatalf("events = %d, want 2", len(sink.events))
+	}
+	if sink.events[0].Phase != trace.PhaseRequest {
+		t.Fatalf("first phase = %q, want request", sink.events[0].Phase)
+	}
+	if sink.events[1].Phase != trace.PhaseResponse {
+		t.Fatalf("second phase = %q, want response", sink.events[1].Phase)
+	}
+	if sink.events[1].Response == nil {
+		t.Fatal("response event did not include response payload")
+	}
+}
+
+func TestTraceToolRecordsToolErrorsWithoutChangingResult(t *testing.T) {
+	sink := &recordingTraceSink{}
+	server := &Server{tracer: trace.NewSessionSink("session-1", 42, sink)}
+	handler := server.traceTool("memory.get", func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return mcp.NewToolResultError("not found"), nil
+	})
+
+	result, err := handler(context.Background(), mcp.CallToolRequest{})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("handler result should remain a tool error")
+	}
+	if len(sink.events) != 2 {
+		t.Fatalf("events = %d, want 2", len(sink.events))
+	}
+	if sink.events[1].Phase != trace.PhaseError {
+		t.Fatalf("second phase = %q, want error", sink.events[1].Phase)
+	}
+	if sink.events[1].Error == "" {
+		t.Fatal("tool error event did not include error text")
+	}
+}
+
+func TestTraceToolRecordsTechnicalErrorsWithoutChangingError(t *testing.T) {
+	sink := &recordingTraceSink{}
+	server := &Server{tracer: trace.NewSessionSink("session-1", 42, sink)}
+	expected := errors.New("database unavailable")
+	handler := server.traceTool("project.list", func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return nil, expected
+	})
+
+	result, err := handler(context.Background(), mcp.CallToolRequest{})
+	if !errors.Is(err, expected) {
+		t.Fatalf("error = %v, want %v", err, expected)
+	}
+	if result != nil {
+		t.Fatalf("result = %#v, want nil", result)
+	}
+	if len(sink.events) != 2 {
+		t.Fatalf("events = %d, want 2", len(sink.events))
+	}
+	if sink.events[1].Phase != trace.PhaseError {
+		t.Fatalf("second phase = %q, want error", sink.events[1].Phase)
+	}
+	if sink.events[1].Error != "database unavailable" {
+		t.Fatalf("error text = %q, want database unavailable", sink.events[1].Error)
+	}
+}
+
+type recordingTraceSink struct {
+	events []trace.Event
+}
+
+func (s *recordingTraceSink) Emit(_ context.Context, event trace.Event) {
+	s.events = append(s.events, event)
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Memory MCP"
+  short_description: "Use project memory across Codex sessions"
+  default_prompt: "Use $project-memory-mcp to check, search, suggest, and update project memory while working."

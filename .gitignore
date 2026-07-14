@@ -1,0 +1,7 @@
+/.env
+/data/*.db
+/data/*.db-*
+/memory-mcp
+/dist/
+.idea
+.DS_Store
