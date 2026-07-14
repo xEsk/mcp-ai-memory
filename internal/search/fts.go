@@ -44,7 +44,7 @@ func (f *FTS) Search(ctx context.Context, projectID, projectKey string, input In
 		COALESCE(e.search_phrases_json, '[]'),
 		m.importance, m.source, m.access_count, m.last_accessed_at, m.created_at, m.updated_at, m.deleted_at,
 		snippet(memory_fts, 11, '[', ']', '...', 24) AS snippet,
-		bm25(memory_fts, 6.0, 1.0, 5.0, 4.0, 4.0, 3.5, 3.5, 3.5, 3.0, 1.5) AS rank
+		bm25(memory_fts, 0.0, 0.0, 6.0, 1.0, 5.0, 4.0, 4.0, 3.5, 3.5, 3.5, 3.0, 1.5) AS rank
 		FROM memory_fts
 		JOIN memories m ON m.id = memory_fts.memory_id
 		LEFT JOIN memory_enrichments e ON e.memory_id = m.id
