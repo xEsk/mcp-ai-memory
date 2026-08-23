@@ -8,7 +8,7 @@ The design baseline is repository `mcp-ai-memory` at commit `f56c19430c986cd9c75
 
 ## Current status
 
-Phase 1 was accepted on 2026-07-14 at implementation baseline `039f7c236096d94dfb6154cb0a4256b727afa9dd`. Its auditable closeout is recorded in [Phase 1 completion evidence](phase-1-completion-evidence.md). Phase 2 construction is implemented on `codex/phase-2-memory-trust`; its [synthetic completion evidence](phase-2-synthetic-completion-evidence.md) records the test proof. The real-data C1/C2/C3 Stop Gates remain pending separate authorization.
+Phase 1 was accepted on 2026-07-14 at implementation baseline `039f7c236096d94dfb6154cb0a4256b727afa9dd`. Its auditable closeout is recorded in [Phase 1 completion evidence](phase-1-completion-evidence.md). Phase 2 construction is integrated into `main`; its [synthetic completion evidence](phase-2-synthetic-completion-evidence.md) records the test proof. The real-data C1/C2/C3 Stop Gates remain pending separate authorization.
 
 ## Execution order
 
