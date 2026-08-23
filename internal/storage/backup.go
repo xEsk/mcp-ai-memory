@@ -32,12 +32,15 @@ func CreateBackup(ctx context.Context, db *sql.DB, sourcePath string) (string, e
 		return "", fmt.Errorf("backup path already exists: %s", backupPath)
 	}
 	complete := false
+	manifestCreated := false
 	defer func() {
 		if complete {
 			return
 		}
 		_ = os.Remove(backupPath)
-		_ = os.Remove(backupPath + ".manifest")
+		if manifestCreated {
+			_ = os.Remove(backupPath + ".manifest")
+		}
 	}()
 	quotedPath := strings.ReplaceAll(backupPath, "'", "''")
 	if _, err := db.ExecContext(ctx, "VACUUM INTO '"+quotedPath+"'"); err != nil {
@@ -52,6 +55,7 @@ func CreateBackup(ctx context.Context, db *sql.DB, sourcePath string) (string, e
 	if err := writeBackupManifest(backupPath); err != nil {
 		return "", err
 	}
+	manifestCreated = true
 	if _, err := verifyBackupSnapshot(ctx, backupPath); err != nil {
 		return "", err
 	}
@@ -85,9 +89,28 @@ func writeBackupManifest(backupPath string) error {
 		return fmt.Errorf("stating snapshot: %w", err)
 	}
 	manifest := fmt.Sprintf("path=%s\nsize=%d\nsha256=%s\ncreated_at=%s\n", filepath.Base(backupPath), info.Size(), sum, time.Now().UTC().Format(time.RFC3339Nano))
-	if err := os.WriteFile(backupPath+".manifest", []byte(manifest), 0o600); err != nil {
+	manifestPath := backupPath + ".manifest"
+	file, err := os.OpenFile(manifestPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("creating snapshot manifest: %w", err)
+	}
+	complete := false
+	defer func() {
+		_ = file.Close()
+		if !complete {
+			_ = os.Remove(manifestPath)
+		}
+	}()
+	if _, err := io.WriteString(file, manifest); err != nil {
 		return fmt.Errorf("writing snapshot manifest: %w", err)
 	}
+	if err := file.Sync(); err != nil {
+		return fmt.Errorf("syncing snapshot manifest: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("closing snapshot manifest: %w", err)
+	}
+	complete = true
 	return nil
 }
 

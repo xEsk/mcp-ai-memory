@@ -294,6 +294,57 @@ func TestCreateBackupProducesReadableSnapshot(t *testing.T) {
 	}
 }
 
+func TestWriteBackupManifestRejectsExistingFileAndSymlink(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		prepare func(*testing.T, string) string
+	}{
+		{
+			name: "existing file",
+			prepare: func(t *testing.T, manifestPath string) string {
+				t.Helper()
+				if err := os.WriteFile(manifestPath, []byte("sentinel"), 0o600); err != nil {
+					t.Fatalf("write existing manifest: %v", err)
+				}
+				return manifestPath
+			},
+		},
+		{
+			name: "symlink",
+			prepare: func(t *testing.T, manifestPath string) string {
+				t.Helper()
+				target := filepath.Join(t.TempDir(), "target")
+				if err := os.WriteFile(target, []byte("sentinel"), 0o600); err != nil {
+					t.Fatalf("write symlink target: %v", err)
+				}
+				if err := os.Symlink(target, manifestPath); err != nil {
+					t.Fatalf("create manifest symlink: %v", err)
+				}
+				return target
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			backupPath := filepath.Join(t.TempDir(), "snapshot.db")
+			if err := os.WriteFile(backupPath, []byte("snapshot"), 0o600); err != nil {
+				t.Fatalf("write snapshot: %v", err)
+			}
+			protectedPath := test.prepare(t, backupPath+".manifest")
+
+			if err := writeBackupManifest(backupPath); err == nil {
+				t.Fatal("manifest creation replaced an existing path")
+			}
+			content, err := os.ReadFile(protectedPath)
+			if err != nil {
+				t.Fatalf("read protected path: %v", err)
+			}
+			if string(content) != "sentinel" {
+				t.Fatalf("protected content = %q, want sentinel", content)
+			}
+		})
+	}
+}
+
 func TestBackupDatabaseRejectsMissingStoreWithoutCreatingIt(t *testing.T) {
 	parent := filepath.Join(t.TempDir(), "missing")
 	path := filepath.Join(parent, "memory.db")
@@ -538,6 +589,140 @@ func TestRestoreBackupRollsBackWhenFinalValidationFails(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("rolled-back source count = %d, want 1", count)
+	}
+}
+
+func TestRestoreBackupRollsBackPartialSidecarQuarantine(t *testing.T) {
+	for _, failedSuffix := range []string{"-wal", "-shm"} {
+		t.Run(failedSuffix, func(t *testing.T) {
+			ctx := context.Background()
+			path := filepath.Join(t.TempDir(), "memory.db")
+			db, err := OpenSQLite(ctx, path)
+			if err != nil {
+				t.Fatalf("open sqlite: %v", err)
+			}
+			if _, err := db.ExecContext(ctx, `INSERT INTO projects (id, key, name, created_at, updated_at) VALUES ('source', 'source', 'Source', 'now', 'now')`); err != nil {
+				t.Fatalf("seed source: %v", err)
+			}
+			backup, err := CreateBackup(ctx, db, path)
+			if err != nil {
+				t.Fatalf("create backup: %v", err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatalf("close source: %v", err)
+			}
+			for _, suffix := range []string{"-wal", "-shm"} {
+				if err := os.WriteFile(path+suffix, []byte("source"+suffix), 0o600); err != nil {
+					t.Fatalf("write sidecar %s: %v", suffix, err)
+				}
+			}
+
+			originalRename := renameMaintenanceFile
+			t.Cleanup(func() { renameMaintenanceFile = originalRename })
+			renameMaintenanceFile = func(oldPath, newPath string) error {
+				if oldPath == path+failedSuffix {
+					return errors.New("injected sidecar move failure")
+				}
+				return originalRename(oldPath, newPath)
+			}
+
+			if _, err := RestoreBackup(ctx, path, backup); err == nil {
+				t.Fatal("restore succeeded despite sidecar move failure")
+			}
+			for _, suffix := range []string{"-wal", "-shm"} {
+				content, err := os.ReadFile(path + suffix)
+				if err != nil {
+					t.Fatalf("read restored sidecar %s: %v", suffix, err)
+				}
+				if string(content) != "source"+suffix {
+					t.Fatalf("sidecar %s content = %q", suffix, content)
+				}
+			}
+			assertProjectExists(t, ctx, path, "source")
+		})
+	}
+}
+
+func TestRestoreBackupRemovesFailedInstallWithoutOriginalSource(t *testing.T) {
+	ctx := context.Background()
+	directory := t.TempDir()
+	sourcePath := filepath.Join(directory, "source.db")
+	db, err := OpenSQLite(ctx, sourcePath)
+	if err != nil {
+		t.Fatalf("open backup source: %v", err)
+	}
+	backup, err := CreateBackup(ctx, db, sourcePath)
+	if err != nil {
+		t.Fatalf("create backup: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close backup source: %v", err)
+	}
+	destinationPath := filepath.Join(directory, "memory.db")
+	originalVerifier := verifySnapshotFile
+	t.Cleanup(func() { verifySnapshotFile = originalVerifier })
+	calls := 0
+	verifySnapshotFile = func(ctx context.Context, snapshotPath string) error {
+		calls++
+		if calls == 2 {
+			return errors.New("injected final validation failure")
+		}
+		return originalVerifier(ctx, snapshotPath)
+	}
+
+	if _, err := RestoreBackup(ctx, destinationPath, backup); err == nil {
+		t.Fatal("restore succeeded despite final validation failure")
+	}
+	if _, err := os.Stat(destinationPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed destination stat error = %v, want not exist", err)
+	}
+}
+
+func TestRestoreBackupReportsRollbackFailureAndPreservesQuarantine(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "memory.db")
+	db, err := OpenSQLite(ctx, path)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	backup, err := CreateBackup(ctx, db, path)
+	if err != nil {
+		t.Fatalf("create backup: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close source: %v", err)
+	}
+	originalVerifier := verifySnapshotFile
+	originalRename := renameMaintenanceFile
+	t.Cleanup(func() {
+		verifySnapshotFile = originalVerifier
+		renameMaintenanceFile = originalRename
+	})
+	calls := 0
+	verifySnapshotFile = func(ctx context.Context, snapshotPath string) error {
+		calls++
+		if calls == 2 {
+			return errors.New("injected final validation failure")
+		}
+		return originalVerifier(ctx, snapshotPath)
+	}
+	renameMaintenanceFile = func(oldPath, newPath string) error {
+		if strings.Contains(oldPath, ".quarantine-") && newPath == path {
+			return errors.New("injected rollback rename failure")
+		}
+		return originalRename(oldPath, newPath)
+	}
+
+	_, err = RestoreBackup(ctx, path, backup)
+	if err == nil || !strings.Contains(err.Error(), "restoring quarantined artifact") {
+		t.Fatalf("restore error = %v, want reported rollback failure", err)
+	}
+	quarantines, globErr := filepath.Glob(path + ".quarantine-*")
+	if globErr != nil {
+		t.Fatalf("find quarantine: %v", globErr)
+	}
+	if len(quarantines) != 1 {
+		t.Fatalf("quarantines = %v, want one preserved source", quarantines)
 	}
 }
 

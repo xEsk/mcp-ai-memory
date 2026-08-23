@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,8 @@ import (
 )
 
 var verifySnapshotFile = verifySnapshot
+
+var renameMaintenanceFile = os.Rename
 
 // InspectSchema classifies a database without opening it for writes.
 func InspectSchema(ctx context.Context, path string) (string, error) {
@@ -106,7 +109,7 @@ func validateExistingDatabasePath(path string) error {
 }
 
 // RestoreBackup installs a verified snapshot while preserving the original as a quarantine file.
-func RestoreBackup(ctx context.Context, path, backupPath string) (string, error) {
+func RestoreBackup(ctx context.Context, path, backupPath string) (quarantinePath string, returnErr error) {
 	if !filepath.IsAbs(path) || !filepath.IsAbs(backupPath) {
 		return "", fmt.Errorf("database and backup paths must be absolute")
 	}
@@ -128,47 +131,68 @@ func RestoreBackup(ctx context.Context, path, backupPath string) (string, error)
 	if err := copySnapshot(backupPath, temporaryPath); err != nil {
 		return "", err
 	}
-	quarantinePath := path + ".quarantine-" + time.Now().UTC().Format("20060102T150405.000000000Z")
-	sourceQuarantined := false
+	quarantinePath = path + ".quarantine-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+	type movedArtifact struct {
+		original   string
+		quarantine string
+	}
+	moved := make([]movedArtifact, 0, 3)
 	installed := false
 	defer func() {
-		if installed || !sourceQuarantined {
+		if returnErr == nil {
 			return
 		}
-		_ = os.Remove(path)
-		for _, suffix := range []string{"-wal", "-shm"} {
-			_ = os.Remove(path + suffix)
+		var rollbackErrors []error
+		if installed {
+			for _, installedPath := range []string{path, path + "-wal", path + "-shm"} {
+				if err := os.Remove(installedPath); err != nil && !os.IsNotExist(err) {
+					rollbackErrors = append(rollbackErrors, fmt.Errorf("removing failed restore artifact %s: %w", installedPath, err))
+				}
+			}
 		}
-		_ = os.Rename(quarantinePath, path)
-		for _, suffix := range []string{"-wal", "-shm"} {
-			_ = os.Rename(quarantinePath+suffix, path+suffix)
+		for index := len(moved) - 1; index >= 0; index-- {
+			artifact := moved[index]
+			if err := renameMaintenanceFile(artifact.quarantine, artifact.original); err != nil {
+				rollbackErrors = append(rollbackErrors, fmt.Errorf("restoring quarantined artifact %s: %w", artifact.quarantine, err))
+			}
 		}
-		_ = os.Remove(temporaryPath)
+		if err := os.Remove(temporaryPath); err != nil && !os.IsNotExist(err) {
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("removing restore temporary file %s: %w", temporaryPath, err))
+		}
+		if len(rollbackErrors) > 0 {
+			returnErr = errors.Join(returnErr, errors.Join(rollbackErrors...))
+		}
 	}()
 	if _, err := os.Stat(path); err == nil {
-		if err := os.Rename(path, quarantinePath); err != nil {
+		if err := renameMaintenanceFile(path, quarantinePath); err != nil {
 			return "", fmt.Errorf("quarantining existing database: %w", err)
 		}
-		sourceQuarantined = true
+		moved = append(moved, movedArtifact{original: path, quarantine: quarantinePath})
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("stating existing database before quarantine: %w", err)
 	}
 	for _, suffix := range []string{"-wal", "-shm"} {
 		sidecarPath := path + suffix
 		if _, err := os.Stat(sidecarPath); err == nil {
-			if err := os.Rename(sidecarPath, quarantinePath+suffix); err != nil {
+			quarantineSidecarPath := quarantinePath + suffix
+			if err := renameMaintenanceFile(sidecarPath, quarantineSidecarPath); err != nil {
 				return "", fmt.Errorf("quarantining database sidecar %s: %w", suffix, err)
 			}
+			moved = append(moved, movedArtifact{original: sidecarPath, quarantine: quarantineSidecarPath})
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("stating database sidecar %s: %w", suffix, err)
 		}
 	}
-	if err := os.Rename(temporaryPath, path); err != nil {
+	if err := renameMaintenanceFile(temporaryPath, path); err != nil {
 		return "", fmt.Errorf("installing backup snapshot: %w", err)
 	}
+	installed = true
 	if err := verifySnapshotFile(ctx, path); err != nil {
 		return "", fmt.Errorf("validating restored database: %w", err)
 	}
 	if err := verifySnapshotAgainstManifest(path, manifest); err != nil {
 		return "", fmt.Errorf("validating restored database manifest: %w", err)
 	}
-	installed = true
 	return quarantinePath, nil
 }
 

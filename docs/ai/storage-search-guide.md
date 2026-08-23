@@ -85,8 +85,8 @@ go run ./cmd/memory-maintenance --operation rebuild-fts --db /absolute/path/to/m
 ```
 
 - `inspect` classifies the store without opening it for writes or creating lock/database files.
-- `backup` requires an existing recognized current store, opens it without runtime migration, uses SQLite `VACUUM INTO`, verifies `PRAGMA integrity_check`, and writes a same-directory manifest containing filename, size, SHA-256, and creation time.
-- `restore` requires the manifest, verifies its identity, size, checksum, and SQLite integrity before preserving the current database as a timestamped quarantine file; it verifies the installed copy again and rolls back on failure.
+- `backup` requires an existing recognized current store, opens it without runtime migration, uses SQLite `VACUUM INTO`, verifies `PRAGMA integrity_check`, and exclusively creates a same-directory manifest containing filename, size, SHA-256, and creation time. An existing manifest path, including a symlink, is never replaced or followed.
+- `restore` requires the manifest, verifies its identity, size, checksum, and SQLite integrity before preserving each existing database artifact as a timestamped quarantine file; it verifies the installed copy again and rolls back only the artifacts that were moved. A failed installation is removed even when no original source existed, and any rollback failure is returned with the surviving quarantine path.
 - `rebuild-fts` requires an existing recognized current store, opens it without runtime migration, and replaces only `memory_fts` rows from active authoritative records in one transaction.
 
 Do not use normal MCP startup to run offline maintenance or validate a backup: startup is migration-capable, whereas maintenance opening is deliberately side-effect-free except for the named operation. Never run automated commands against `data/memory.db`; use a new path under `t.TempDir()` and the guard described in `development-guide.md`.
