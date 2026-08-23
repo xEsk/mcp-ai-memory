@@ -22,11 +22,13 @@ The application is a single binary MCP server. `cmd/memory-mcp` wires startup, `
 
 Project isolation is a core invariant. Memory operations resolve the project key first and then use `project_id`/`project_key` filters in persistence and search paths.
 
-Access metrics are stored on each memory so agents can tell whether retrieved memories are being used.
+Access metrics record aggregate server exposure of each memory; they do not prove a client read, reused, or valued it.
 
 ## Repository Structure
 
-- `cmd/memory-mcp/`: process entrypoint.
+- `cmd/memory-mcp/`: MCP stdio process entrypoint.
+- `cmd/memory-monitor/`: optional local trace-monitor process.
+- `cmd/memory-maintenance/`: explicit offline database inspection, backup, restore, and FTS rebuild command.
 - `internal/app/`: configuration and dependency wiring.
 - `internal/mcpserver/`: MCP tool schemas and handlers.
 - `internal/project/`: project model, service, and SQLite repository.
@@ -46,9 +48,13 @@ New features should extend existing package boundaries before introducing new la
 
 ## Current Plans
 
-- [Memory Trust Roadmap](../plans/2026-07-14-001-memory-trust-roadmap/README.md): three ordered specifications covering P0 correctness/privacy, P1 continuity/operability/evidence, and P2 retrieval quality/debuggability. Phase 1 is accepted at commit `039f7c236096d94dfb6154cb0a4256b727afa9dd`; Phase 2 has not started and must use a dedicated `codex/` branch from the accepted handoff.
+- [Memory Trust Roadmap](../plans/2026-07-14-001-memory-trust-roadmap/README.md): three ordered specifications covering P0 correctness/privacy, P1 continuity/operability/evidence, and P2 retrieval quality/debuggability. Phase 1 is accepted at commit `039f7c236096d94dfb6154cb0a4256b727afa9dd`; Phase 2 implementation is on `codex/phase-2-memory-trust` and awaits separately authorized C1/C2/C3 real-store operations.
 
 ## Choose Documentation By Task
+
+Need product boundaries, runtime model, or system constraints:
+
+→ `project-overview.md`
 
 Need MCP tool changes:
 
@@ -57,6 +63,10 @@ Need MCP tool changes:
 Need database or search changes:
 
 → `storage-search-guide.md`
+
+Need database inspection, backup, restore, migration, or FTS recovery:
+
+→ `storage-search-guide.md` and `development-guide.md`
 
 Need exact internal memory lifecycle details for storing, enrichment, FTS indexing, search, responses, access metrics, suggestions, or deletion:
 
@@ -91,6 +101,7 @@ Need previous decisions:
 - Preserve memory access metrics when changing get/list/search behavior.
 - Do not write logs or diagnostics to stdout in stdio MCP mode.
 - Trace monitor delivery must remain asynchronous and fail-silent; monitor failures must never affect MCP behavior.
+- Database startup and offline maintenance are mutually exclusive; use only an explicit absolute database path.
 - Keep generated operational memory in English.
 
 ## Warning

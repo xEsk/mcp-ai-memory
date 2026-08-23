@@ -24,6 +24,8 @@ The process runs as an MCP stdio server. Codex or another MCP client starts the 
 
 Because stdout is protocol transport, application diagnostics should go to stderr or structured logging that does not corrupt stdio.
 
+Two optional companion commands are outside the normal MCP process: `cmd/memory-monitor` displays explicitly enabled local trace events, and `cmd/memory-maintenance` performs offline schema inspection, snapshot, restore, or FTS recovery. They must not become runtime dependencies of the MCP server.
+
 ## Core Data Model
 
 Projects have a stable `key`, human `name`, and optional `description`.
@@ -52,6 +54,12 @@ Retrieval metadata is derived and stored separately in `memory_enrichments`:
 ## Extension Direction
 
 The current search path is FTS5. Embedding and vector search interfaces already exist to support a later hybrid search implementation without changing MCP tool contracts.
+
+## Store Continuity
+
+`MEMORY_DB_PATH` is required and absolute; process environment is the only configuration source. Startup classifies an existing SQLite store before writes, adopts a recognized unversioned current schema, and records versioned schema state in `schema_migrations`. Unknown, partial, future, or checksum-inconsistent schemas fail closed.
+
+The server holds an exclusive operation lock for its database path. Offline maintenance uses the same lock, so maintenance commands must run only after MCP instances stop.
 
 ## Related Documents
 

@@ -20,6 +20,14 @@ The Go module path is `mcp-ai-memory` because the code is only used by this MCP 
 
 SQLite is the main database. The code uses `modernc.org/sqlite`, which keeps the project pure Go and supports FTS5 in the tested path.
 
+### Explicit database identity and fail-closed schema handling
+
+The server takes its required, absolute database path only from `MEMORY_DB_PATH`; it does not load `.env` files. Existing stores are classified before writes, recognized pre-ledger current stores are backed up before adoption, and unsupported schema states fail closed rather than being modified opportunistically.
+
+### Offline continuity operations
+
+Backup, restore, and FTS rebuild are explicit `memory-maintenance` operations, excluded from the normal MCP runtime by a per-database operation lock. Authoritative rows remain the source of truth; FTS is derived and may be rebuilt from them.
+
 ### FTS5 before vector search
 
 Search is implemented with SQLite FTS5 over original and enriched fields. Embedding/vector interfaces exist, but vector search is an extension point rather than active v1 behavior.

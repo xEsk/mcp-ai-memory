@@ -8,17 +8,9 @@
 
 ## Project Knowledge Base Workflow
 
-Future AI agents must use the persistent project knowledge base before broad repository analysis.
+Before unfamiliar project work, read `docs/ai/README.md` and open only the guides relevant to the task.
 
-1. Read `docs/ai/README.md` first.
-2. Understand the basic project context and identify the task type.
-3. Open only the `docs/ai/` files relevant to the current task.
-4. Do not analyze the entire repository immediately.
-5. Respect existing project conventions and preserve project continuity.
-6. Do not redesign architecture unless explicitly requested.
-7. If code contradicts the knowledge base, trust code and update the knowledge base afterward.
-8. If a new subsystem, workflow, or important decision is added, update `docs/ai/`.
-9. Keep the knowledge base in English.
+Treat current source and explicit user decisions as authoritative. Update affected `docs/ai/` files when durable architecture, workflows, commands, boundaries, or critical rules change; do not mirror transient implementation details there. Keep the knowledge base in English.
 
 ## Project Memory MCP
 

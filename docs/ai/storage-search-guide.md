@@ -8,13 +8,13 @@ Read this before changing migrations, repositories, search ranking, or deletion 
 
 ## How This Area Works
 
-SQLite is opened in `internal/storage/sqlite.go` using `modernc.org/sqlite`. The schema is initialized idempotently from `internal/storage/migrations.go`.
+SQLite is opened in `internal/storage/sqlite.go` using `modernc.org/sqlite`. `OpenSQLite` classifies an existing database read-only before it allows writes. The current schema is applied through a checksummed `schema_migrations` ledger; recognized current unversioned stores are adopted, while unknown, partial, future, version-gapped, or checksum-drifted stores fail closed.
 
 The main tables are `projects`, `memories`, `memory_enrichments`, and virtual table `memory_fts`.
 
 Memory upsert writes original memory data to `memories`, writes derived retrieval metadata to `memory_enrichments`, and replaces the FTS row in a single transaction. Soft delete sets `deleted_at` and removes the FTS row.
 
-Returned memories track usage with `access_count` and `last_accessed_at`. Search, get, and list operations increment these fields for active memories they return. `memory.search.count` returns only the match count and must not increment access metrics.
+Returned memories track aggregate retrieval/exposure history internally with `access_count` and `last_accessed_at`. Public MCP output projects these as `retrieval_count` and `last_retrieved_at`; they do not demonstrate that a client read, reused, or valued a memory. Search, get, list, debug search, and suggest increment these fields for active memories they return. `memory.search.count` returns only the match count and must not increment access metrics.
 
 ## Main Code Locations
 
@@ -69,6 +69,27 @@ When adding searchable metadata:
 - JSON arrays are stored as JSON text in `memory_enrichments.*_json` columns.
 - Access metrics live on `memories`; they are not indexed in FTS.
 - `memories` should remain focused on original content, source metadata, timestamps, soft delete, and usage metrics.
+- `memory_enrichments` and `memories` are authoritative; `memory_fts` is derived and can be rebuilt from active rows.
+
+## Offline Maintenance
+
+Read this section before operating on any existing database. Stop all MCP instances first: the server and maintenance command use the same exclusive `<db>.operation.lock` reservation.
+
+All commands require absolute paths and write status only to stderr:
+
+```bash
+go run ./cmd/memory-maintenance --operation inspect --db /absolute/path/to/memory.db
+go run ./cmd/memory-maintenance --operation backup --db /absolute/path/to/memory.db
+go run ./cmd/memory-maintenance --operation restore --db /absolute/path/to/memory.db --backup /absolute/path/to/snapshot.db
+go run ./cmd/memory-maintenance --operation rebuild-fts --db /absolute/path/to/memory.db
+```
+
+- `inspect` classifies the store without opening it for writes.
+- `backup` uses SQLite `VACUUM INTO`, verifies `PRAGMA integrity_check`, and writes a same-directory checksum manifest.
+- `restore` verifies the snapshot, preserves the current database as a timestamped quarantine file, then verifies the installed copy.
+- `rebuild-fts` replaces only `memory_fts` rows from active authoritative records in one transaction.
+
+Do not use normal MCP startup to validate a backup. Never run automated commands against `data/memory.db`; use a new path under `t.TempDir()` and the guard described in `development-guide.md`.
 
 ## Common Mistakes To Avoid
 

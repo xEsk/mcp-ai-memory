@@ -19,14 +19,18 @@ Use:
 ```bash
 go test ./...
 go build ./cmd/memory-mcp
+go build ./cmd/memory-monitor
+go build ./cmd/memory-maintenance
 ```
 
-Make targets mirror these commands:
+Make targets cover the MCP server and monitor:
 
 ```bash
 make test
 make build
+make build-monitor
 make run
+make monitor
 make tidy
 ```
 
@@ -34,7 +38,7 @@ make tidy
 
 Runtime config comes from environment variables:
 
-- `MEMORY_DB_PATH`: SQLite path, default `./data/memory.db`.
+- `MEMORY_DB_PATH`: required absolute SQLite path. The binary does not load `.env` files.
 - `MEMORY_ENRICHER`: `heuristic`, `openai-compatible`, or `openai`.
 - `MEMORY_LLM_BASE_URL`: OpenAI-compatible base URL.
 - `MEMORY_LLM_API_KEY`: provider token.
@@ -138,8 +142,6 @@ go test ./...
 go build ./cmd/memory-mcp
 go build ./cmd/memory-monitor
 ```
-
-If build cache permissions fail in a sandboxed environment, request escalation rather than changing project paths.
 
 ## Related Documents
 

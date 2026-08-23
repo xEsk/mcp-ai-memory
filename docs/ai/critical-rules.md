@@ -18,13 +18,21 @@ Original `content` must always be preserved. Enrichment fields can improve retri
 
 Memory upsert must keep original memory data, enrichment data, and FTS indexing synchronized. Writes currently happen inside a transaction.
 
+`memories` and `memory_enrichments` are authoritative; `memory_fts` is derived state. An FTS rebuild may regenerate only that index from active authoritative rows.
+
 The default path must work locally without API keys. The heuristic enricher is the fallback and should remain available.
 
 The server speaks MCP over stdio. Do not write normal logs to stdout because stdout is protocol transport.
 
+`MEMORY_DB_PATH` must be explicit and absolute. Never restore, migrate, rebuild, inspect through write-capable startup, or otherwise operate on a store while its MCP server can be running; the operation lock is the enforcement mechanism, not permission to run concurrent work.
+
+Existing stores must be classified before writes. Unknown, partial, future, version-gapped, or checksum-drifted schemas must fail closed. A recognized pre-ledger store is backed up before startup adopts it.
+
+Backup and restore are explicit offline operations. Restore verifies the snapshot, quarantines the original store, and does not silently overwrite an active database.
+
 Tracing must require explicit payload consent. Keep `off` as the default; `metadata` is a closed non-sensitive allowlist, while `raw` is an explicit confidentiality decision. Enabled trace delivery is loopback-only, asynchronous, non-blocking, fail-silent, and must not follow redirects.
 
-Memory read paths that return memories to clients should update usage metrics. This lets future agents identify whether stored memories are actually used.
+Memory read paths that return memories to clients should update exposure metrics. They show what the server returned, not whether a client used or valued a memory.
 
 Normal MCP responses should not leak internal retrieval machinery. Keep summaries, keywords, entities, aliases, search phrases, snippets, scores, and match explanations internal unless adding an explicit debug tool.
 
@@ -37,6 +45,7 @@ Normal MCP responses should not leak internal retrieval machinery. Keep summarie
 - Introduce cross-project search by default.
 - Add background workers or daemon processes for v1 behavior unless explicitly requested.
 - Treat `data/memory.db` as source-controlled project knowledge.
+- Use `data/memory.db` in automated tests, fixtures, smoke checks, migration rehearsal, or retrieval evaluation.
 
 ## Sensitive Areas
 
