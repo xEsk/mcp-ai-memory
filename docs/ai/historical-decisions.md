@@ -36,6 +36,16 @@ Search is implemented with SQLite FTS5 over original and enriched fields. Embedd
 
 `memory.search` defaults to `precise` mode to reduce unrelated retrieval. Agents can opt into `balanced` or `broad` mode when they need wider recall, and can call `memory.search.count` before fetching memories to reduce token use.
 
+Retrieval normalization remains lexical and evidence-gated. Unicode technical tokens share one scanner; one- and two-rune terms are exact and longer terms retain prefix compatibility. SQLite `unicode61`, the FTS schema, BM25 weights, and the accepted quality thresholds remain unchanged.
+
+### Prospective enrichment without historical guessing
+
+Local heuristic enrichment is deterministic, Unicode/rune safe, and based on reviewed exact token/phrase rules. The change applies to new or explicitly upserted memories only. Existing derived metadata is not rewritten because the schema has no reliable enricher kind/version provenance; a plain FTS rebuild cannot correct that limitation.
+
+### Quality-aware suggestion and evidence-backed debug
+
+Suggestion broadens only when precise has no safe recommendation, evaluates the deduplicated final candidates conservatively, and records their aggregate exposure once. Debug match attribution comes from actual SQLite highlights across indexed fields, never substring-based causal guesses. Internal candidate content and debug evidence remain behind explicit response projection boundaries.
+
 ### Project isolation by design
 
 Memory tools require a project key. Repositories and search then use project ownership filters. Do not add cross-project behavior by accident.

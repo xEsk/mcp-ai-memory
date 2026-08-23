@@ -16,15 +16,19 @@ The original memory content is preserved. Enrichment only adds metadata used for
 
 `LocalHeuristicEnricher` works without API keys.
 
-It currently generates:
+It generates deterministic prospective metadata:
 
-- `summary`: first normalized content segment up to about 420 characters.
-- `short_summary`: first normalized content segment up to about 160 characters.
-- `keywords`: top 24 lowercase tokens by frequency, after a small stopword filter.
+- `summary`: first normalized content segment up to 420 Unicode runes.
+- `short_summary`: first normalized content segment up to 160 Unicode runes.
+- `keywords`: top 24 Unicode lowercase tokens by frequency, after a small stopword filter, including a reviewed short technical vocabulary.
 - `entities`: up to 24 tokens containing uppercase letters or technical separators like `.`, `/`, `:`, `_`, `-`.
-- `tags`: user tags plus type and simple inferred tags.
-- `search_phrases`: generated future-query phrases using project, title, keywords, and entities.
-- `aliases`: simple synonyms for API and repository-related tokens.
+- `tags`: user tags plus type and ordered whole-token/phrase inference rules.
+- `search_phrases`: generated future-query phrases using project, title, keywords, and entities, deduplicated case-insensitively with a hard cap of 18.
+- `aliases`: reviewed exact-token synonym groups for API and repository vocabulary.
+
+The heuristic does not use arbitrary substring matches: for example, `build` does not imply `ui`, `contest` does not imply `test`, and `capitalization` does not imply `api`. Equal input produces equal ordered output.
+
+These corrections apply only when a memory is new or explicitly upserted. Existing enrichment is not automatically rewritten because stored rows do not record enough enricher provenance to distinguish local, provider-generated, and legacy metadata safely. Historical remediation requires a separately approved provenance and migration design; rebuilding FTS alone preserves the existing enrichment.
 
 ## OpenAI-Compatible Enrichment
 

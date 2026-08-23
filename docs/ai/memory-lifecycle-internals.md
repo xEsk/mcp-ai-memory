@@ -22,9 +22,9 @@ Original `content` is source data. Generated summary, keywords, tags, entities, 
 
 ## Retrieval: Search, Get, and List
 
-`memory.search` uses FTS5 over source and enrichment fields. It defaults to `precise`; `balanced` and `broad` widen recall. FTS terms are cleaned prefix terms; `precise` combines accepted terms with `AND`, while the wider modes use `OR`.
+`memory.search` uses FTS5 over source and enrichment fields. It defaults to `precise`; `balanced` and `broad` widen recall. The shared Unicode scanner splits technical separators consistently. One- and two-rune terms are escaped exact terms; longer terms are escaped prefixes. Precise combines accepted terms with `AND`, while wider modes use `OR`. Precise and balanced share the same term set, and normalized empty input returns a typed invalid-query error.
 
-`memory.search.count` uses the same filter but returns only a count and does not record access. `memory.search.debug` uses the normal retrieval path but exposes diagnostic snippets, scores, and match explanations.
+`memory.search.count` uses the same compiler and filter but returns only a count and does not record access. `memory.search.debug` uses the normal retrieval path and exposes SQLite-highlight-backed matched fields, selected snippet field, highlighted snippet, score, and an evidence-derived explanation.
 
 `memory.get` and `memory.list` query active rows directly. List supports one type and one simple JSON-text tag filter, orders by `updated_at DESC`, and does not use FTS.
 
@@ -38,7 +38,7 @@ Public responses expose them as `retrieval_count` and `last_retrieved_at`. Norma
 
 ## Suggestion and Delete
 
-`memory.suggest` is non-mutating. It searches `input` plus optional context in `precise` mode, retrying `balanced` only when precise finds none. It returns up to five candidates, local quality classification, and one recommended candidate only when the deterministic quality gate supports `update_existing`.
+`memory.suggest` is non-mutating with respect to stored memory content. It searches `input` plus optional context in `precise` mode without recording exposure, evaluates candidate quality using the compiled query terms and internal source/enrichment evidence, and retries with `balanced` whenever precise has no safe recommendation. It merges and deduplicates the final set, preserves conservative ambiguity abstention, then records only the final public candidate IDs once. Internal content may support quality evaluation but is removed by the public candidate response projection.
 
 `memory.delete` soft-deletes an active same-project row and removes its FTS document in one transaction. Source and enrichment rows remain. Upserting the same ID can restore the row; get, list, and search must otherwise exclude it.
 

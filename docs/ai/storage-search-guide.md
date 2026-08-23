@@ -14,7 +14,7 @@ The main tables are `projects`, `memories`, `memory_enrichments`, and virtual ta
 
 Memory upsert writes original memory data to `memories`, writes derived retrieval metadata to `memory_enrichments`, and replaces the FTS row in a single transaction. Soft delete sets `deleted_at` and removes the FTS row.
 
-Returned memories track aggregate retrieval/exposure history internally with `access_count` and `last_accessed_at`. Public MCP output projects these as `retrieval_count` and `last_retrieved_at`; they do not demonstrate that a client read, reused, or valued a memory. Search, get, list, debug search, and suggest increment these fields for active memories they return. `memory.search.count` returns only the match count and must not increment access metrics.
+Returned memories track aggregate retrieval/exposure history internally with `access_count` and `last_accessed_at`. Public MCP output projects these as `retrieval_count` and `last_retrieved_at`; they do not demonstrate that a client read, reused, or valued a memory. Search, get, list, and debug search increment these fields for active memories they return. Suggestion performs its precise and optional balanced searches without recording, deduplicates the final public candidates, and records each final ID once. `memory.search.count` returns only the match count and must not increment access metrics.
 
 ## Main Code Locations
 
@@ -45,9 +45,13 @@ FTS indexes:
 
 Search supports three modes. `precise` is the default and removes common stopwords before requiring all remaining terms. `balanced` removes common stopwords but keeps OR matching. `broad` stays close to the original expansion behavior with OR prefix matching.
 
+`internal/retrievaltext` provides the shared Unicode-aware technical token boundaries used by search and local enrichment. Search compiles one- and two-rune terms as escaped exact FTS terms and terms of three or more runes as escaped prefixes. Precise and balanced use the same normalized terms and differ only in `AND` versus `OR`; broad retains stopwords for wider measured recall. Empty, punctuation-only, or stopword-only normalized input returns `search.ErrInvalidQuery` instead of executing an empty FTS expression. Quotes are treated as separators, not user phrase syntax.
+
 Ranking uses SQLite `bm25`. Because `memory_id` and `project_key` occupy the first two FTS column positions even though they are `UNINDEXED`, the query supplies two leading neutral placeholders before the documented weights for `type` through `content`.
 
 Results are ordered by rank, then `importance`, then `updated_at`.
+
+Debug search obtains match evidence from SQLite `highlight()` across all ten indexed fields. It returns ordered `matched_fields`, the weight-prioritized `snippet_field`, a highlighted snippet, and an explanation derived from that same evidence. Normal search DTOs do not expose these diagnostic fields.
 
 A synthetic temporary-database ranking fixture exercises the real schema and `FTS.Search` and asserts relative field ordering rather than SQLite-version-specific floating-point scores. The correction is query-time only, so it requires no schema migration, FTS rebuild, or re-enrichment.
 

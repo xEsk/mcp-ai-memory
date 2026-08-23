@@ -21,7 +21,7 @@ Public memory responses are intentionally slim. Enrichment fields are internal r
 - `memory.upsert`: create or update a memory and refresh search metadata/index.
 - `memory.search`: search active memories inside one project with optional `mode`.
 - `memory.search.count`: count matching active memories without returning memories or recording access.
-- `memory.search.debug`: inspect ranking details, snippets, scores, and match explanations.
+- `memory.search.debug`: inspect SQLite-backed matched fields, selected highlighted snippets, scores, and evidence-derived explanations.
 - `memory.get`: retrieve one active memory by project and ID.
 - `memory.list`: list active memories with optional type/tag filters.
 - `memory.delete`: soft-delete one memory.
@@ -44,10 +44,12 @@ When adding a tool:
 - `memory.server.info` intentionally returns only basic identity fields: `name` and `version`.
 - `memory.upsert` defaults `enrich` to true if the argument is omitted.
 - `memory.search` defaults to `precise` mode. Clients can request `balanced` or `broad` when they want wider recall.
-- `memory.suggest` must not mutate memory in v1. It searches with `precise` first, then retries with `balanced` only when precise finds no candidates. Its response includes `search_mode` so clients can tell which mode produced the candidates, or that both modes found none.
+- Search, count, debug, and suggest return a tool error for normalized empty queries, including punctuation-only and stopword-only input.
+- `memory.suggest` must not mutate memory content in v1. It searches with `precise` first, then retries with `balanced` when precise has no safe recommendation. Its response includes `search_mode` so clients can tell whether broadening was required.
 - `memory.suggest` candidates are ranked by relevance to the suggestion input, then passed through a local semantic quality gate. `recommended_candidate_id` is set only when the best candidate is strong enough for `update_existing`. Candidate `memory.importance` remains global memory importance, not match quality. Use `candidate_quality` for structured match quality and `next_step` for compact agent workflow guidance.
 - Tool responses use `mcp.NewToolResultStructuredOnly` for structured data.
 - Memory responses should expose the saved memory core, not generated retrieval fields. Use `internal/mcpserver/responses.go` for response shaping.
+- Debug results add `matched_fields`, `snippet_field`, `snippet`, `score`, and `match_explanation`. These fields remain exclusive to `memory.search.debug`.
 
 ## Common Mistakes To Avoid
 
