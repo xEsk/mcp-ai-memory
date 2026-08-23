@@ -23,6 +23,8 @@ type memoryOutput struct {
 
 type searchDebugOutput struct {
 	Memory           memoryOutput `json:"memory"`
+	MatchedFields    []string     `json:"matched_fields"`
+	SnippetField     string       `json:"snippet_field"`
 	Snippet          string       `json:"snippet"`
 	Score            float64      `json:"score"`
 	MatchExplanation string       `json:"match_explanation"`
@@ -76,6 +78,8 @@ func newSearchDebugOutputs(results []search.Result) []searchDebugOutput {
 	for _, result := range results {
 		out = append(out, searchDebugOutput{
 			Memory:           newMemoryOutput(result.Memory, false),
+			MatchedFields:    result.MatchedFields,
+			SnippetField:     result.SnippetField,
 			Snippet:          result.Snippet,
 			Score:            result.Score,
 			MatchExplanation: result.MatchExplanation,

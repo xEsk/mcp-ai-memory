@@ -39,6 +39,28 @@ func TestMemoryResponseHelpersPreserveNilRetrievalTimestamp(t *testing.T) {
 	assertPublicRetrievalHistory(t, output, 0, nil)
 }
 
+func TestSearchDebugResponseIncludesStructuredEvidenceOnlyInDebugProjection(t *testing.T) {
+	result := search.Result{
+		Memory:        memory.Memory{ID: "memory-1", ProjectKey: "project", Content: "PRIVATE-SENTINEL"},
+		MatchedFields: []string{"summary", "content"}, SnippetField: "summary",
+		Snippet: "[needle] summary", MatchExplanation: "precise search matched indexed fields: summary, content",
+	}
+	debug := newSearchDebugOutputs([]search.Result{result})[0]
+	if len(debug.MatchedFields) != 2 || debug.SnippetField != "summary" || debug.Snippet != "[needle] summary" {
+		t.Fatalf("debug evidence = %#v", debug)
+	}
+	encodedDebug, err := json.Marshal(debug)
+	if err != nil {
+		t.Fatalf("marshal debug response: %v", err)
+	}
+	if string(encodedDebug) == "" || json.Valid(encodedDebug) == false {
+		t.Fatalf("invalid debug JSON: %s", encodedDebug)
+	}
+	if output := newSearchOutputs([]search.Result{result}, false)[0]; output.Content != "" {
+		t.Fatalf("normal search response exposed content: %#v", output)
+	}
+}
+
 func assertPublicRetrievalHistory(t *testing.T, output memoryOutput, wantCount int, wantRetrievedAt any) {
 	t.Helper()
 	encoded, err := json.Marshal(output)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -124,6 +125,18 @@ func TestFTS_SearchUsesDocumentedBM25FieldOrder(t *testing.T) {
 		}
 		field := result.Memory.ID[len(prefix):]
 		scores[field] = result.Score
+		if !reflect.DeepEqual(result.MatchedFields, []string{field}) {
+			t.Errorf("%s matched fields = %v, want only itself", field, result.MatchedFields)
+		}
+		if result.SnippetField != field {
+			t.Errorf("%s snippet field = %q, want %q", field, result.SnippetField, field)
+		}
+		if !strings.Contains(result.Snippet, "[needle]") {
+			t.Errorf("%s snippet = %q, want highlighted needle", field, result.Snippet)
+		}
+		if result.MatchExplanation != "precise search matched indexed fields: "+field {
+			t.Errorf("%s explanation = %q", field, result.MatchExplanation)
+		}
 	}
 	for _, field := range fields {
 		if _, ok := scores[field.name]; !ok {
@@ -154,6 +167,31 @@ func TestFTS_SearchUsesDocumentedBM25FieldOrder(t *testing.T) {
 		if scores[current] <= scores[next] || sameRankingScore(scores[current], scores[next]) {
 			t.Errorf("%s score %g should rank ahead of %s score %g", current, scores[current], next, scores[next])
 		}
+	}
+
+	multi := memory.Memory{
+		ID: "multi-evidence", ProjectID: projectID, ProjectKey: projectKey,
+		Type: "neutral", Title: "multi evidence", Content: "multi evidence content",
+		Summary: "multi evidence summary", ShortSummary: "neutral", Keywords: []string{"neutral"},
+		Tags: []string{"multi evidence"}, Entities: []string{"neutral"}, Aliases: []string{"neutral"},
+		SearchPhrases: []string{"neutral"}, Importance: 3, CreatedAt: frozenAt, UpdatedAt: frozenAt,
+	}
+	if _, err := memories.Upsert(ctx, multi); err != nil {
+		t.Fatalf("upsert multi-field fixture: %v", err)
+	}
+	multiResults, err := fts.Search(ctx, projectID, projectKey, Input{Project: projectKey, Query: "multi-evidence", Limit: 10})
+	if err != nil {
+		t.Fatalf("search multi-field fixture: %v", err)
+	}
+	if len(multiResults) != 1 {
+		t.Fatalf("multi-field search returned %d results, want 1", len(multiResults))
+	}
+	wantFields := []string{"summary", "tags", "content", "title"}
+	if !reflect.DeepEqual(multiResults[0].MatchedFields, wantFields) {
+		t.Fatalf("multi-field matches = %v, want %v", multiResults[0].MatchedFields, wantFields)
+	}
+	if multiResults[0].SnippetField != "summary" || !strings.Contains(multiResults[0].Snippet, "[multi] [evidence]") {
+		t.Fatalf("multi-field snippet = (%q, %q), want highlighted summary", multiResults[0].SnippetField, multiResults[0].Snippet)
 	}
 }
 

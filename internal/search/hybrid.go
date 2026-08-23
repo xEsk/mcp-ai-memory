@@ -3,10 +3,7 @@ package search
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"time"
-
-	"mcp-ai-memory/internal/memory"
 )
 
 // Service coordinates text search and leaves the extension point for vectors.
@@ -37,37 +34,6 @@ func (s *Service) RecordAccesses(ctx context.Context, projectID string, results 
 // Count counts search results without recording accesses.
 func (s *Service) Count(ctx context.Context, projectID, projectKey string, input Input) (int, string, error) {
 	return s.fts.Count(ctx, projectID, projectKey, input)
-}
-
-func explain(mode, query string, m memory.Memory) string {
-	q := strings.ToLower(query)
-	var parts []string
-	if containsAny(m.Title, q) {
-		parts = append(parts, "title")
-	}
-	if containsAny(strings.Join(m.Tags, " "), q) {
-		parts = append(parts, "tags")
-	}
-	if containsAny(strings.Join(m.Entities, " "), q) {
-		parts = append(parts, "entities")
-	}
-	if containsAny(strings.Join(m.SearchPhrases, " "), q) {
-		parts = append(parts, "search phrases")
-	}
-	if len(parts) == 0 {
-		parts = append(parts, "FTS5 contextual match over enriched memory fields")
-	}
-	return mode + " search matched by " + strings.Join(parts, ", ")
-}
-
-func containsAny(text, query string) bool {
-	text = strings.ToLower(text)
-	for _, word := range strings.Fields(query) {
-		if len(word) > 2 && strings.Contains(text, word) {
-			return true
-		}
-	}
-	return false
 }
 
 func jsonList(value string) []string {

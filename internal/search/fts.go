@@ -52,7 +52,16 @@ func (f *FTS) search(ctx context.Context, projectID, projectKey string, input In
 		COALESCE(e.entities_json, '[]'), COALESCE(e.aliases_json, '[]'),
 		COALESCE(e.search_phrases_json, '[]'),
 		m.importance, m.source, m.access_count, m.last_accessed_at, m.created_at, m.updated_at, m.deleted_at,
-		snippet(memory_fts, 11, '[', ']', '...', 24) AS snippet,
+		highlight(memory_fts, 2, char(30), char(31)),
+		highlight(memory_fts, 3, char(30), char(31)),
+		highlight(memory_fts, 4, char(30), char(31)),
+		highlight(memory_fts, 5, char(30), char(31)),
+		highlight(memory_fts, 6, char(30), char(31)),
+		highlight(memory_fts, 7, char(30), char(31)),
+		highlight(memory_fts, 8, char(30), char(31)),
+		highlight(memory_fts, 9, char(30), char(31)),
+		highlight(memory_fts, 10, char(30), char(31)),
+		highlight(memory_fts, 11, char(30), char(31)),
 		bm25(memory_fts, 0.0, 0.0, 6.0, 1.0, 5.0, 4.0, 4.0, 3.5, 3.5, 3.5, 3.0, 1.5) AS rank
 		FROM memory_fts
 		JOIN memories m ON m.id = memory_fts.memory_id
@@ -75,11 +84,12 @@ func (f *FTS) search(ctx context.Context, projectID, projectKey string, input In
 		var createdAt, updatedAt string
 		var lastAccessedAt sql.NullString
 		var deletedAt sql.NullString
-		var snippet string
+		var highlights [10]string
 		var rank float64
 		if err := rows.Scan(&m.ID, &m.ProjectID, &m.Type, &m.Title, &m.Content, &m.Summary, &m.ShortSummary,
 			&keywords, &tags, &entities, &aliases, &phrases, &m.Importance, &m.Source, &m.AccessCount, &lastAccessedAt, &createdAt, &updatedAt, &deletedAt,
-			&snippet, &rank); err != nil {
+			&highlights[0], &highlights[1], &highlights[2], &highlights[3], &highlights[4],
+			&highlights[5], &highlights[6], &highlights[7], &highlights[8], &highlights[9], &rank); err != nil {
 			return nil, fmt.Errorf("scanning search result: %w", err)
 		}
 		m.ProjectKey = projectKey
@@ -99,11 +109,14 @@ func (f *FTS) search(ctx context.Context, projectID, projectKey string, input In
 		if !input.IncludeContent {
 			m.Content = ""
 		}
+		matchedFields, snippetField, snippet, explanation := searchEvidence(filter.Mode, highlights)
 		results = append(results, Result{
 			Memory:           m,
+			MatchedFields:    matchedFields,
+			SnippetField:     snippetField,
 			Snippet:          snippet,
 			Score:            -rank,
-			MatchExplanation: explain(filter.Mode, input.Query, m),
+			MatchExplanation: explanation,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -115,6 +128,94 @@ func (f *FTS) search(ctx context.Context, projectID, projectKey string, input In
 		}
 	}
 	return results, nil
+}
+
+const (
+	highlightStart = '\x1e'
+	highlightEnd   = '\x1f'
+)
+
+var searchEvidencePriority = []struct {
+	name  string
+	index int
+}{
+	{name: "type", index: 0},
+	{name: "summary", index: 2},
+	{name: "short_summary", index: 3},
+	{name: "keywords", index: 4},
+	{name: "tags", index: 5},
+	{name: "entities", index: 6},
+	{name: "aliases", index: 7},
+	{name: "search_phrases", index: 8},
+	{name: "content", index: 9},
+	{name: "title", index: 1},
+}
+
+func searchEvidence(mode string, highlights [10]string) ([]string, string, string, string) {
+	var matched []string
+	selected := -1
+	for _, field := range searchEvidencePriority {
+		if !strings.ContainsRune(highlights[field.index], highlightStart) {
+			continue
+		}
+		matched = append(matched, field.name)
+		if selected < 0 {
+			selected = field.index
+		}
+	}
+	if selected < 0 {
+		return nil, "", "", mode + " search matched FTS5 without highlight evidence"
+	}
+	return matched, searchEvidencePriorityName(selected), renderHighlight(highlights[selected]),
+		mode + " search matched indexed fields: " + strings.Join(matched, ", ")
+}
+
+func searchEvidencePriorityName(index int) string {
+	for _, field := range searchEvidencePriority {
+		if field.index == index {
+			return field.name
+		}
+	}
+	return ""
+}
+
+func renderHighlight(value string) string {
+	runes := []rune(value)
+	match := -1
+	matchEnd := -1
+	for i, r := range runes {
+		if r == highlightStart {
+			match = i
+			continue
+		}
+		if match >= 0 && r == highlightEnd {
+			matchEnd = i
+			break
+		}
+	}
+	const snippetRunes = 240
+	start := 0
+	end := len(runes)
+	if len(runes) > snippetRunes && match >= 0 {
+		start = max(0, match-80)
+		end = min(len(runes), start+snippetRunes)
+		if end == len(runes) {
+			start = max(0, end-snippetRunes)
+		}
+		if matchEnd >= end {
+			end = matchEnd + 1
+			start = min(start, match)
+		}
+	}
+	text := string(runes[start:end])
+	text = strings.NewReplacer(string(highlightStart), "[", string(highlightEnd), "]").Replace(text)
+	if start > 0 {
+		text = "..." + text
+	}
+	if end < len(runes) {
+		text += "..."
+	}
+	return text
 }
 
 // RecordAccesses records one retrieval for each distinct result memory.

@@ -22,6 +22,8 @@ type Input struct {
 // Result represents a matched memory and why it matched.
 type Result struct {
 	Memory           memory.Memory `json:"memory"`
+	MatchedFields    []string      `json:"matched_fields"`
+	SnippetField     string        `json:"snippet_field"`
 	Snippet          string        `json:"snippet"`
 	Score            float64       `json:"score"`
 	MatchExplanation string        `json:"match_explanation"`
