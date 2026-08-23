@@ -75,16 +75,18 @@ Run repository-wide tests through the filesystem-metadata guard:
 ./scripts/verify-real-db-untouched.sh -- go test -race -count=1 ./...
 ```
 
+`make verify` is the canonical local and CI entry point. It tests the guard itself, runs the guarded race suite, builds all three commands, checks Go formatting and diff whitespace, lists the expected temporary test stores, and fails if test source names the protected real-store path.
+
 The guard rejects normalized or embedded command arguments that name the real database, refuses `sh`, `bash`, and `zsh` indirection, and compares only entry existence, inode, size, permissions, and timestamps for the database and sidecars before and after the command. It is a metadata-change tripwire, not an operating-system audit of arbitrary executable reads. Completion proof must pair it with source inspection showing that every test database uses `t.TempDir()` and no test source names `data/memory.db`.
 
 Use these source checks when closing a phase:
 
 ```bash
-rg -n 't\.TempDir\(\).*memory\.db' --glob '*_test.go' .
+rg -n 'memory\.db' --glob '*_test.go' .
 rg -n 'data/memory\.db' --glob '*_test.go' .
 ```
 
-The first command must list every test database path. The second must exit `1` with no matches.
+Inspect every path listed by the first command and confirm it is created below `t.TempDir()`; relative-path validation fixtures must fail before storage access. The second command must exit `1` with no matches.
 
 MCP client config examples live in `examples/`:
 

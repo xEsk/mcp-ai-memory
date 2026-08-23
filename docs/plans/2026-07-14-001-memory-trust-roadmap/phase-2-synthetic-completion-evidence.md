@@ -43,3 +43,11 @@ Quality corpus `2026-07-14-v1` reported global Hit@1, Recall@5, MRR@10, and nDCG
 ## Post-proof storage hardening
 
 The pre-Phase-3 review added and passed synthetic regressions for complete schema-definition validation (including constraints and unexpected objects), stale migration-lock recovery, runtime-versus-maintenance exclusion, and rollback when final restored-snapshot validation fails. Both operation and migration locks are kernel-managed advisory locks, so stale lock files no longer block a later process after a crash. The final guarded race suite was rerun after these corrections.
+
+## Reliability follow-up
+
+The August 2026 follow-up removed the remaining incidental-write path from offline maintenance. Backup and FTS rebuild now reject missing paths before lock or directory creation and open recognised stores without runtime migration or adoption. Restore requires the generated manifest, verifies its snapshot identity, size, and SHA-256 before quarantine, repeats SQLite and manifest validation after installation, and rolls the source back if final validation fails. Synthetic regressions cover missing stores, current unversioned stores, absent manifests, valid-but-substituted snapshots, rollback, and sidecar handling.
+
+Enabled tracing now has explicit application lifecycle ownership. Graceful shutdown closes the asynchronous sink exactly once, drains accepted events, and emits a payload-free `trace.queue` health event when queue pressure caused drops. The monitor renders the cumulative count, and the metadata privacy allowlist includes only the numeric `dropped_events` addition.
+
+The repository now uses `.github/workflows/verify.yml` and the same `make verify` entry point locally. The verification target tests the real-store guard, runs the full guarded race suite, builds all three commands, checks Go formatting and diff whitespace, lists temporary test-database fixtures, and rejects any test source that names `data/memory.db`. The complete target exited zero after these corrections and reported `real database filesystem metadata unchanged`.

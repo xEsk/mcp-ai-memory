@@ -180,7 +180,7 @@ Done evidence: every Phase 3 completion checklist item passes without threshold 
 go build -o dist/memory-mcp ./cmd/memory-mcp
 go build -o dist/memory-monitor ./cmd/memory-monitor
 go build -o dist/memory-maintenance ./cmd/memory-maintenance
-rg -n 't\.TempDir\(\).*memory\.db' --glob '*_test.go' .
+rg -n 'memory\.db' --glob '*_test.go' .
 rg -n 'data/memory\.db' --glob '*_test.go' .
 gofmt -l cmd internal
 git diff --check
