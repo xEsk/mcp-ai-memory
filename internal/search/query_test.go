@@ -58,7 +58,7 @@ func TestCompileQueryTechnicalCompatibilityMatrix(t *testing.T) {
 		"C R x Go DB UI io v2 S3 x509",
 		"API MCP SQL JWT OR IN com.example",
 		"io.Reader context.Context ErrNotFound memory_fts x-request-id",
-		`internal/search/fts.go go.mod .env C:\\workspace\\memory.db`,
+		`internal/search/fts.go go.mod .env C:\\workspace\\store.sqlite`,
 		`C# C++ "quoted words"`,
 	} {
 		compiled, err := CompileQuery(query, ModePrecise)
