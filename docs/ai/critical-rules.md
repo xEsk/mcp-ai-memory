@@ -30,7 +30,7 @@ Existing stores must be classified before writes. Unknown, partial, future, vers
 
 Backup and restore are explicit offline operations. Backup must not apply runtime migrations. Restore verifies SQLite integrity and the snapshot manifest, quarantines the original store, and does not silently overwrite an active database.
 
-Tracing must require explicit payload consent. Keep `off` as the default; `metadata` is a closed non-sensitive allowlist, while `raw` is an explicit confidentiality decision. Enabled trace delivery is loopback-only, asynchronous, non-blocking, fail-silent, and must not follow redirects.
+Tracing must require explicit payload consent. Keep `off` as the default; `metadata` is a closed non-sensitive allowlist, while `raw` is an explicit confidentiality decision. Enabled trace delivery is loopback-only, asynchronous, non-blocking, fail-silent, and must not follow redirects. Queue pressure may drop trace events but never MCP work; graceful shutdown must drain accepted events and report the cumulative drop count through payload-free health metadata.
 
 Memory read paths that return memories to clients should update exposure metrics. They show what the server returned, not whether a client used or valued a memory.
 

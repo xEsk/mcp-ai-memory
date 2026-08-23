@@ -126,11 +126,20 @@ const indexHTML = `<!doctype html>
     const status = document.getElementById("status");
     const source = new EventSource("/events/stream");
     const rows = [];
+    let droppedEvents = 0;
 
-    source.onopen = () => status.textContent = "live";
+    function liveStatus() {
+      return droppedEvents ? "live · dropped " + droppedEvents : "live";
+    }
+
+    source.onopen = () => status.textContent = liveStatus();
     source.onerror = () => status.textContent = "reconnecting...";
     source.onmessage = (message) => {
       const event = JSON.parse(message.data);
+      if (event.dropped_events) {
+        droppedEvents = Math.max(droppedEvents, Number(event.dropped_events));
+        status.textContent = liveStatus();
+      }
       rows.unshift(event);
       if (rows.length > 200) rows.pop();
       render();

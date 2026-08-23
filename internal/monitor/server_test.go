@@ -54,6 +54,20 @@ func TestServerKeepsOnlyRecentEvents(t *testing.T) {
 	}
 }
 
+func TestMonitorUIRendersDroppedEventHealth(t *testing.T) {
+	server := NewServer(10)
+	response := httptest.NewRecorder()
+
+	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	body := response.Body.String()
+	for _, expected := range []string{"event.dropped_events", "live · dropped "} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("monitor UI does not contain %q", expected)
+		}
+	}
+}
+
 func TestServerStreamsEvents(t *testing.T) {
 	server := NewServer(10)
 	httpServer := httptest.NewServer(server)

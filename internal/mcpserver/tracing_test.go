@@ -49,11 +49,35 @@ func TestTraceToolMetadataContainsOnlyAllowlistedFields(t *testing.T) {
 		}
 		for key := range fields {
 			switch key {
-			case "session_id", "pid", "tool", "phase", "duration_ms", "status":
+			case "session_id", "pid", "tool", "phase", "duration_ms", "status", "dropped_events":
 			default:
 				t.Fatalf("metadata payload contains non-allowlisted field %q: %s", key, encoded)
 			}
 		}
+	}
+}
+
+func TestTraceMetadataAllowsDropHealthWithoutRawPayload(t *testing.T) {
+	recorder := &recordingTraceSink{}
+	sink := trace.NewMetadataSink(recorder)
+	sink.Emit(context.Background(), trace.Event{
+		SessionID:     "session-1",
+		PID:           42,
+		Tool:          "trace.queue",
+		Phase:         trace.PhaseHealth,
+		Status:        trace.StatusDegraded,
+		DroppedEvents: 3,
+		Arguments:     "sentinel-arguments",
+		Response:      "sentinel-response",
+		Error:         "sentinel-error",
+	})
+
+	got := recorder.events[0]
+	if got.DroppedEvents != 3 {
+		t.Fatalf("dropped events = %d, want 3", got.DroppedEvents)
+	}
+	if got.Arguments != nil || got.Response != nil || got.Error != "" {
+		t.Fatalf("metadata health event contains raw payload: %#v", got)
 	}
 }
 

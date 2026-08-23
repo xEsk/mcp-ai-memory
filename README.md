@@ -32,6 +32,8 @@ http://127.0.0.1:7379
 
 If the monitor is not running, the MCP server ignores trace delivery failures and continues normally. The MCP stdio transport remains reserved for protocol messages; trace diagnostics never write to stdout from `memory-mcp`.
 
+Trace production remains non-blocking when the local queue is full. Dropped events are counted, and graceful server shutdown drains queued events and sends a payload-free `trace.queue` health event to the monitor when any drops occurred. The monitor keeps the cumulative drop count visible in its connection status.
+
 Trace configuration:
 
 - `MEMORY_TRACE_MODE`: `off`, `metadata`, or `raw`; default `off`. An invalid value prevents startup.

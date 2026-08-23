@@ -24,15 +24,31 @@ func TestLoadConfigTraceDefaultsOffEvenWithMonitorURL(t *testing.T) {
 }
 
 func TestBuildTraceSinkMonitorURLAloneDoesNotEnableTracing(t *testing.T) {
-	sink, err := buildTraceSink(Config{
+	sink, closeTrace, err := buildTraceSink(Config{
 		TraceMode:       TraceModeOff,
 		TraceMonitorURL: "http://127.0.0.1:7379/events",
 	})
 	if err != nil {
 		t.Fatalf("build trace sink: %v", err)
 	}
+	defer closeTrace()
 	if _, ok := sink.(trace.NoopSink); !ok {
 		t.Fatalf("sink = %T, want trace.NoopSink", sink)
+	}
+}
+
+func TestAppCloseOwnsTraceShutdownOnce(t *testing.T) {
+	closed := 0
+	application := &App{traceClose: func() { closed++ }}
+
+	if err := application.Close(); err != nil {
+		t.Fatalf("first close: %v", err)
+	}
+	if err := application.Close(); err != nil {
+		t.Fatalf("second close: %v", err)
+	}
+	if closed != 1 {
+		t.Fatalf("trace shutdown calls = %d, want 1", closed)
 	}
 }
 

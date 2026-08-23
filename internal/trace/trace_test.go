@@ -45,6 +45,60 @@ func TestAsyncSinkDropsWhenBufferIsFull(t *testing.T) {
 	close(release)
 }
 
+func TestAsyncSinkCloseDrainsQueueAndReportsDroppedEvents(t *testing.T) {
+	blocked := make(chan struct{})
+	release := make(chan struct{})
+	inner := &blockingRecordingSink{blocked: blocked, release: release}
+	sink := NewAsyncSink(inner, 1)
+
+	sink.Emit(context.Background(), Event{SessionID: "session-1", PID: 42, Tool: "first", Phase: PhaseRequest})
+	<-blocked
+	sink.Emit(context.Background(), Event{SessionID: "session-1", PID: 42, Tool: "queued", Phase: PhaseRequest})
+	sink.Emit(context.Background(), Event{SessionID: "session-1", PID: 42, Tool: "dropped", Phase: PhaseRequest})
+
+	closed := make(chan struct{})
+	go func() {
+		sink.Close()
+		close(closed)
+	}()
+	close(release)
+	<-closed
+
+	if sink.Dropped() != 1 {
+		t.Fatalf("dropped events = %d, want 1", sink.Dropped())
+	}
+	events := inner.Events()
+	if len(events) != 3 {
+		t.Fatalf("events = %d, want first, queued, and health", len(events))
+	}
+	health := events[2]
+	if health.Tool != "trace.queue" || health.Phase != PhaseHealth || health.Status != StatusDegraded {
+		t.Fatalf("health event = %#v", health)
+	}
+	if health.DroppedEvents != 1 || health.SessionID != "session-1" || health.PID != 42 {
+		t.Fatalf("health metadata = %#v", health)
+	}
+	if health.Arguments != nil || health.Response != nil || health.Error != "" {
+		t.Fatalf("health event contains raw payload: %#v", health)
+	}
+}
+
+func TestAsyncSinkEmitConcurrentWithCloseDoesNotPanic(t *testing.T) {
+	sink := NewAsyncSink(NoopSink{}, 8)
+	var emitters sync.WaitGroup
+	for range 8 {
+		emitters.Add(1)
+		go func() {
+			defer emitters.Done()
+			for range 1000 {
+				sink.Emit(context.Background(), Event{Tool: "memory.search", Phase: PhaseRequest})
+			}
+		}()
+	}
+	sink.Close()
+	emitters.Wait()
+}
+
 func TestMonitorSinkPostsEvents(t *testing.T) {
 	received := make(chan Event, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -223,6 +277,30 @@ func (s *blockingSink) Emit(context.Context, Event) {
 
 type recordingSink struct {
 	events []Event
+}
+
+type blockingRecordingSink struct {
+	blocked chan struct{}
+	release chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	events  []Event
+}
+
+func (s *blockingRecordingSink) Emit(_ context.Context, event Event) {
+	s.once.Do(func() {
+		close(s.blocked)
+		<-s.release
+	})
+	s.mu.Lock()
+	s.events = append(s.events, event)
+	s.mu.Unlock()
+}
+
+func (s *blockingRecordingSink) Events() []Event {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]Event(nil), s.events...)
 }
 
 func (s *recordingSink) Emit(_ context.Context, event Event) {

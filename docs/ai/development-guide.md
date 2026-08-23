@@ -53,9 +53,9 @@ Runtime config comes from environment variables:
 
 ## Trace Monitor
 
-The MCP server always keeps stdio reserved for protocol traffic. Tracing is off by default and is delivered through `internal/trace` to an optional local monitor over HTTP only after `MEMORY_TRACE_MODE` is explicitly set to `metadata` or `raw`. Delivery is asynchronous and fail-silent: if the monitor is closed, unreachable, slow, or returns an error, MCP behavior must remain unchanged.
+The MCP server always keeps stdio reserved for protocol traffic. Tracing is off by default and is delivered through `internal/trace` to an optional local monitor over HTTP only after `MEMORY_TRACE_MODE` is explicitly set to `metadata` or `raw`. Delivery is asynchronous and fail-silent: if the monitor is closed, unreachable, slow, or returns an error, MCP behavior must remain unchanged. A full queue drops new trace events without blocking MCP calls and increments a concurrency-safe counter. Graceful application shutdown drains accepted events and, when drops occurred, emits one payload-free `trace.queue` health event whose `dropped_events` value is rendered by the monitor.
 
-Metadata mode emits only the documented operational allowlist and excludes arguments, responses, queries, project keys, memory content, and raw errors. Raw mode emits full debugging payloads and must be treated as confidential. Both enabled modes require an exact `localhost` or literal loopback-IP endpoint, reject redirects, and verify the connected address remains loopback. Restart the MCP server or its client after changing trace configuration.
+Metadata mode emits only the documented operational allowlist (`session_id`, `pid`, `tool`, `phase`, `duration_ms`, `status`, and `dropped_events`) and excludes arguments, responses, queries, project keys, memory content, and raw errors. Raw mode emits full debugging payloads and must be treated as confidential. Both enabled modes require an exact `localhost` or literal loopback-IP endpoint, reject redirects, and verify the connected address remains loopback. Restart the MCP server or its client after changing trace configuration.
 
 Run the monitor manually when needed:
 
