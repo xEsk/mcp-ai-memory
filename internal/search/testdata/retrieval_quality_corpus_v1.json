@@ -1,0 +1,45 @@
+{
+  "corpus_version": "2026-07-14-v1",
+  "query_version": "2026-07-14-v1",
+  "slices": ["identifier_path", "natural_language", "enrichment_only", "shared_vocabulary", "near_duplicate", "multilingual", "no_match"],
+  "projects": [
+    {"key": "atlas-api", "name": "Atlas API"},
+    {"key": "atlas-ui", "name": "Atlas UI"},
+    {"key": "northstar-ops", "name": "Northstar Operations"}
+  ],
+  "memories": [
+    {"id": "api-route-registry", "project": "atlas-api", "type": "implementation", "title": "Route registry ROUTE-REG-42", "content": "The route registry lives at /internal/routes/registry.go and validates endpoint ownership before deployment.", "tags": ["routing"], "importance": 5},
+    {"id": "api-invoice-validation", "project": "atlas-api", "type": "api", "title": "Invoice payload validation", "content": "InvoiceController validates invoice payload fields before the billing endpoint accepts a request.", "tags": ["billing"], "importance": 4},
+    {"id": "api-invoice-contract", "project": "atlas-api", "type": "decision", "title": "Invoice request contract", "content": "Billing clients must send invoice payload validation fields and preserve the idempotency key.", "tags": ["billing"], "importance": 3},
+    {"id": "api-client-convention", "project": "atlas-api", "type": "convention", "title": "HTTP adapter convention", "content": "The API adapter owns outbound transport retries and endpoint error translation.", "tags": ["transport"], "importance": 4},
+    {"id": "api-cache-migration", "project": "atlas-api", "type": "workflow", "title": "Cache migration workflow", "content": "Run cache migration after schema verification and warm the API cache with stable catalog entries.", "tags": ["cache"], "importance": 3},
+    {"id": "api-token-rotation", "project": "atlas-api", "type": "workflow", "title": "Token rotation runbook", "content": "Rotate service tokens with the security runbook, then invalidate the previous token in the API gateway.", "tags": ["security"], "importance": 5},
+    {"id": "api-factura-cierre", "project": "atlas-api", "type": "implementation", "title": "Cierre transaccional de factura", "content": "El cierre transaccional de factura confirma el asiento contable y evita duplicados durante la conciliación.", "tags": ["billing"], "importance": 4},
+    {"id": "api-cache-distractor", "project": "atlas-api", "type": "workflow", "title": "Cache review notes", "content": "Cache review notes describe dashboard labels and do not run a migration.", "tags": ["cache"], "importance": 1},
+    {"id": "ui-route-registry-copy", "project": "atlas-ui", "type": "implementation", "title": "Route registry ROUTE-REG-42", "content": "The UI copied route registry wording but its file is /web/routes/registry.ts.", "tags": ["routing"], "importance": 5},
+    {"id": "ui-token-rotation-copy", "project": "atlas-ui", "type": "workflow", "title": "Token rotation runbook", "content": "The UI rotation runbook refreshes browser tokens and is not the API gateway procedure.", "tags": ["security"], "importance": 4},
+    {"id": "ops-cache-migration-copy", "project": "northstar-ops", "type": "workflow", "title": "Cache migration workflow", "content": "Operations run cache migration on monitoring snapshots, separate from Atlas API catalog warming.", "tags": ["cache"], "importance": 4}
+  ],
+  "queries": [
+    {"id": "identifier-route-registry", "project": "atlas-api", "text": "ROUTE-REG-42", "mode": "precise", "slice": "identifier_path", "critical": true, "judgments": [{"memory_id": "api-route-registry", "grade": 3}]},
+    {"id": "path-route-registry", "project": "atlas-api", "text": "/internal/routes/registry.go", "mode": "precise", "slice": "identifier_path", "critical": true, "judgments": [{"memory_id": "api-route-registry", "grade": 3}]},
+    {"id": "invoice-natural-language", "project": "atlas-api", "text": "invoice payload validation", "mode": "precise", "slice": "natural_language", "critical": true, "judgments": [{"memory_id": "api-invoice-validation", "grade": 3}, {"memory_id": "api-invoice-contract", "grade": 2}]},
+    {"id": "adapter-alias", "project": "atlas-api", "text": "route helper", "mode": "precise", "slice": "enrichment_only", "critical": true, "judgments": [{"memory_id": "api-client-convention", "grade": 3}, {"memory_id": "api-cache-migration", "grade": 0}, {"memory_id": "api-token-rotation", "grade": 0}]},
+    {"id": "cache-migration", "project": "atlas-api", "text": "cache migration", "mode": "broad", "slice": "shared_vocabulary", "critical": false, "judgments": [{"memory_id": "api-cache-migration", "grade": 3}, {"memory_id": "api-cache-distractor", "grade": 1}]},
+    {"id": "token-runbook", "project": "atlas-api", "text": "token rotation runbook", "mode": "precise", "slice": "near_duplicate", "critical": true, "judgments": [{"memory_id": "api-token-rotation", "grade": 3}]},
+    {"id": "factura-cierre", "project": "atlas-api", "text": "cierre transaccional factura", "mode": "precise", "slice": "multilingual", "critical": true, "judgments": [{"memory_id": "api-factura-cierre", "grade": 3}]},
+    {"id": "hard-negative", "project": "atlas-api", "text": "unicorn quantum lattice", "mode": "precise", "slice": "no_match", "critical": true, "no_match": true}
+  ],
+  "baseline": {
+    "global": {"hit_at_1": 1.0, "recall_at_5": 1.0, "mrr_at_10": 1.0, "ndcg_at_5": 1.0},
+    "slices": {
+      "identifier_path": {"hit_at_1": 1.0, "recall_at_5": 1.0, "mrr_at_10": 1.0, "ndcg_at_5": 1.0},
+      "natural_language": {"hit_at_1": 1.0, "recall_at_5": 1.0, "mrr_at_10": 1.0, "ndcg_at_5": 1.0},
+      "enrichment_only": {"hit_at_1": 1.0, "recall_at_5": 1.0, "mrr_at_10": 1.0, "ndcg_at_5": 1.0},
+      "shared_vocabulary": {"hit_at_1": 1.0, "recall_at_5": 1.0, "mrr_at_10": 1.0, "ndcg_at_5": 1.0},
+      "near_duplicate": {"hit_at_1": 1.0, "recall_at_5": 1.0, "mrr_at_10": 1.0, "ndcg_at_5": 1.0},
+      "multilingual": {"hit_at_1": 1.0, "recall_at_5": 1.0, "mrr_at_10": 1.0, "ndcg_at_5": 1.0},
+      "no_match": {"hit_at_1": 0.0, "recall_at_5": 0.0, "mrr_at_10": 0.0, "ndcg_at_5": 0.0}
+    }
+  }
+}
