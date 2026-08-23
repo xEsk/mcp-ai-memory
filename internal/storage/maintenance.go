@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
@@ -27,12 +28,90 @@ func InspectSchema(ctx context.Context, path string) (string, error) {
 	return string(state), nil
 }
 
+// BackupDatabase creates a verified snapshot without applying runtime migrations.
+func BackupDatabase(ctx context.Context, path string) (string, error) {
+	if err := validateExistingDatabasePath(path); err != nil {
+		return "", err
+	}
+	lock, err := AcquireMaintenanceLock(path)
+	if err != nil {
+		return "", err
+	}
+	defer lock.Close()
+	db, err := openMaintenanceSQLite(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+	return CreateBackup(ctx, db, path)
+}
+
+// RebuildDatabaseFTS rebuilds derived search state without applying runtime migrations.
+func RebuildDatabaseFTS(ctx context.Context, path string) error {
+	if err := validateExistingDatabasePath(path); err != nil {
+		return err
+	}
+	lock, err := AcquireMaintenanceLock(path)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	db, err := openMaintenanceSQLite(ctx, path)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return RebuildFTS(ctx, db)
+}
+
+func openMaintenanceSQLite(ctx context.Context, path string) (*sql.DB, error) {
+	if err := validateExistingDatabasePath(path); err != nil {
+		return nil, err
+	}
+	state, err := classifyPath(ctx, path, true)
+	if err != nil {
+		return nil, err
+	}
+	if state != schemaCurrentUnversioned && state != schemaCurrentVersioned {
+		return nil, fmt.Errorf("%w: %s", ErrUnsupportedSchema, state)
+	}
+	db, err := sql.Open("sqlite", path+"?mode=rw&_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	if err != nil {
+		return nil, fmt.Errorf("opening sqlite database for maintenance: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("pinging sqlite database for maintenance: %w", err)
+	}
+	return db, nil
+}
+
+func validateExistingDatabasePath(path string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("database path must be absolute")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("database does not exist: %s", path)
+		}
+		return fmt.Errorf("stating database path: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("database path is not a regular file: %s", path)
+	}
+	return nil
+}
+
 // RestoreBackup installs a verified snapshot while preserving the original as a quarantine file.
 func RestoreBackup(ctx context.Context, path, backupPath string) (string, error) {
 	if !filepath.IsAbs(path) || !filepath.IsAbs(backupPath) {
 		return "", fmt.Errorf("database and backup paths must be absolute")
 	}
-	if err := verifySnapshotFile(ctx, backupPath); err != nil {
+	manifest, err := verifyBackupSnapshot(ctx, backupPath)
+	if err != nil {
 		return "", fmt.Errorf("verifying backup snapshot: %w", err)
 	}
 	operationLock, err := AcquireMaintenanceLock(path)
@@ -86,6 +165,9 @@ func RestoreBackup(ctx context.Context, path, backupPath string) (string, error)
 	if err := verifySnapshotFile(ctx, path); err != nil {
 		return "", fmt.Errorf("validating restored database: %w", err)
 	}
+	if err := verifySnapshotAgainstManifest(path, manifest); err != nil {
+		return "", fmt.Errorf("validating restored database manifest: %w", err)
+	}
 	installed = true
 	return quarantinePath, nil
 }
@@ -102,13 +184,16 @@ func copySnapshot(sourcePath, destinationPath string) error {
 	}
 	if _, err := io.Copy(destination, source); err != nil {
 		_ = destination.Close()
+		_ = os.Remove(destinationPath)
 		return fmt.Errorf("copying backup snapshot: %w", err)
 	}
 	if err := destination.Sync(); err != nil {
 		_ = destination.Close()
+		_ = os.Remove(destinationPath)
 		return fmt.Errorf("syncing restore temporary file: %w", err)
 	}
 	if err := destination.Close(); err != nil {
+		_ = os.Remove(destinationPath)
 		return fmt.Errorf("closing restore temporary file: %w", err)
 	}
 	return nil

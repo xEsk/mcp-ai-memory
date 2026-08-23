@@ -94,7 +94,7 @@ All memory tools require `project` to avoid cross-project context leakage.
 
 ## Offline maintenance
 
-Stop MCP instances before maintenance. Create a verified snapshot or rebuild the derived FTS index from authoritative rows with an explicit absolute path:
+`inspect` is read-only and does not reserve or modify the store. Stop every MCP instance before `backup`, `restore`, or `rebuild-fts`; those operations reserve the database path exclusively. Use an explicit absolute path:
 
 ```bash
 go run ./cmd/memory-maintenance --operation inspect --db /absolute/path/to/memory.db
@@ -102,6 +102,8 @@ go run ./cmd/memory-maintenance --operation backup --db /absolute/path/to/memory
 go run ./cmd/memory-maintenance --operation restore --db /absolute/path/to/memory.db --backup /absolute/path/to/snapshot.db
 go run ./cmd/memory-maintenance --operation rebuild-fts --db /absolute/path/to/memory.db
 ```
+
+Backup and rebuild require an existing recognized store and never apply runtime migrations as a side effect. A backup includes a `.manifest` with its filename, size, SHA-256 checksum, and creation time. Restore rejects a missing or mismatched manifest before quarantining the current store.
 
 ## Documentation
 

@@ -59,7 +59,7 @@ The current search path is FTS5. Embedding and vector search interfaces already 
 
 `MEMORY_DB_PATH` is required and absolute; process environment is the only configuration source. Startup classifies an existing SQLite store before writes, adopts a recognized unversioned current schema, and records versioned schema state in `schema_migrations`. Unknown, partial, future, or checksum-inconsistent schemas fail closed.
 
-The server holds an exclusive operation lock for its database path. Offline maintenance uses the same lock, so maintenance commands must run only after MCP instances stop.
+The server holds an exclusive operation lock for its database path. Backup, restore, and FTS rebuild use the same lock and require MCP instances to stop. Read-only schema inspection does not reserve or modify the store.
 
 ## Related Documents
 

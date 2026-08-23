@@ -73,7 +73,7 @@ When adding searchable metadata:
 
 ## Offline Maintenance
 
-Read this section before operating on any existing database. Stop all MCP instances first: the server and maintenance command use the same exclusive `<db>.operation.lock` reservation.
+Read this section before operating on any existing database. `inspect` is a zero-write classification operation and does not acquire the operation lock. Stop all MCP instances before `backup`, `restore`, or `rebuild-fts`; those commands use the same exclusive `<db>.operation.lock` reservation as the server.
 
 All commands require absolute paths and write status only to stderr:
 
@@ -84,12 +84,12 @@ go run ./cmd/memory-maintenance --operation restore --db /absolute/path/to/memor
 go run ./cmd/memory-maintenance --operation rebuild-fts --db /absolute/path/to/memory.db
 ```
 
-- `inspect` classifies the store without opening it for writes.
-- `backup` uses SQLite `VACUUM INTO`, verifies `PRAGMA integrity_check`, and writes a same-directory checksum manifest.
-- `restore` verifies the snapshot, preserves the current database as a timestamped quarantine file, then verifies the installed copy.
-- `rebuild-fts` replaces only `memory_fts` rows from active authoritative records in one transaction.
+- `inspect` classifies the store without opening it for writes or creating lock/database files.
+- `backup` requires an existing recognized current store, opens it without runtime migration, uses SQLite `VACUUM INTO`, verifies `PRAGMA integrity_check`, and writes a same-directory manifest containing filename, size, SHA-256, and creation time.
+- `restore` requires the manifest, verifies its identity, size, checksum, and SQLite integrity before preserving the current database as a timestamped quarantine file; it verifies the installed copy again and rolls back on failure.
+- `rebuild-fts` requires an existing recognized current store, opens it without runtime migration, and replaces only `memory_fts` rows from active authoritative records in one transaction.
 
-Do not use normal MCP startup to validate a backup. Never run automated commands against `data/memory.db`; use a new path under `t.TempDir()` and the guard described in `development-guide.md`.
+Do not use normal MCP startup to run offline maintenance or validate a backup: startup is migration-capable, whereas maintenance opening is deliberately side-effect-free except for the named operation. Never run automated commands against `data/memory.db`; use a new path under `t.TempDir()` and the guard described in `development-guide.md`.
 
 ## Common Mistakes To Avoid
 

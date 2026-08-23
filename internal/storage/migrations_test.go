@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -293,6 +294,72 @@ func TestCreateBackupProducesReadableSnapshot(t *testing.T) {
 	}
 }
 
+func TestBackupDatabaseRejectsMissingStoreWithoutCreatingIt(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "missing")
+	path := filepath.Join(parent, "memory.db")
+
+	if _, err := BackupDatabase(context.Background(), path); err == nil {
+		t.Fatal("backup succeeded for a missing store")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("database stat error = %v, want not exist", err)
+	}
+	if _, err := os.Stat(parent); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("database parent stat error = %v, want not exist", err)
+	}
+}
+
+func TestRebuildDatabaseFTSRejectsMissingStoreWithoutCreatingIt(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "missing")
+	path := filepath.Join(parent, "memory.db")
+
+	if err := RebuildDatabaseFTS(context.Background(), path); err == nil {
+		t.Fatal("FTS rebuild succeeded for a missing store")
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("database stat error = %v, want not exist", err)
+	}
+	if _, err := os.Stat(parent); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("database parent stat error = %v, want not exist", err)
+	}
+}
+
+func TestBackupDatabaseDoesNotAdoptRecognizedUnversionedStore(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "memory.db")
+	db, err := OpenSQLite(ctx, path)
+	if err != nil {
+		t.Fatalf("open current store: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `DROP TABLE schema_migrations`); err != nil {
+		t.Fatalf("remove migration ledger: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close unversioned store: %v", err)
+	}
+
+	backup, err := BackupDatabase(ctx, path)
+	if err != nil {
+		t.Fatalf("backup unversioned store: %v", err)
+	}
+	if _, err := os.Stat(backup + ".manifest"); err != nil {
+		t.Fatalf("backup manifest: %v", err)
+	}
+
+	readOnly, err := sql.Open("sqlite", path+"?mode=ro")
+	if err != nil {
+		t.Fatalf("open source read-only: %v", err)
+	}
+	defer readOnly.Close()
+	var ledgerCount int
+	if err := readOnly.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'`).Scan(&ledgerCount); err != nil {
+		t.Fatalf("count source ledger: %v", err)
+	}
+	if ledgerCount != 0 {
+		t.Fatalf("source gained %d migration ledgers during backup", ledgerCount)
+	}
+}
+
 func TestRebuildFTSRestoresOnlyActiveAuthoritativeMemories(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "memory.db")
@@ -363,6 +430,68 @@ func TestRestoreBackupQuarantinesDatabaseSidecars(t *testing.T) {
 	}
 }
 
+func TestRestoreBackupRejectsMissingManifestWithoutChangingSource(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "memory.db")
+	db, err := OpenSQLite(ctx, path)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO projects (id, key, name, created_at, updated_at) VALUES ('source', 'source', 'Source', 'now', 'now')`); err != nil {
+		t.Fatalf("seed source: %v", err)
+	}
+	backup, err := CreateBackup(ctx, db, path)
+	if err != nil {
+		t.Fatalf("create backup: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close source: %v", err)
+	}
+	if err := os.Remove(backup + ".manifest"); err != nil {
+		t.Fatalf("remove manifest: %v", err)
+	}
+
+	if _, err := RestoreBackup(ctx, path, backup); err == nil || !strings.Contains(err.Error(), "manifest") {
+		t.Fatalf("restore error = %v, want missing manifest error", err)
+	}
+	assertProjectExists(t, ctx, path, "source")
+}
+
+func TestRestoreBackupRejectsValidSQLiteWithManifestChecksumDrift(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "memory.db")
+	db, err := OpenSQLite(ctx, path)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO projects (id, key, name, created_at, updated_at) VALUES ('source', 'source', 'Source', 'now', 'now')`); err != nil {
+		t.Fatalf("seed source: %v", err)
+	}
+	backup, err := CreateBackup(ctx, db, path)
+	if err != nil {
+		t.Fatalf("create backup: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close source: %v", err)
+	}
+
+	tampered, err := sql.Open("sqlite", backup)
+	if err != nil {
+		t.Fatalf("open backup for tampering: %v", err)
+	}
+	if _, err := tampered.ExecContext(ctx, `INSERT INTO projects (id, key, name, created_at, updated_at) VALUES ('tampered', 'tampered', 'Tampered', 'now', 'now')`); err != nil {
+		t.Fatalf("tamper valid backup: %v", err)
+	}
+	if err := tampered.Close(); err != nil {
+		t.Fatalf("close tampered backup: %v", err)
+	}
+
+	if _, err := RestoreBackup(ctx, path, backup); err == nil || !strings.Contains(err.Error(), "checksum") {
+		t.Fatalf("restore error = %v, want checksum error", err)
+	}
+	assertProjectExists(t, ctx, path, "source")
+}
+
 func TestRestoreBackupRollsBackWhenFinalValidationFails(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "memory.db")
@@ -409,5 +538,21 @@ func TestRestoreBackupRollsBackWhenFinalValidationFails(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("rolled-back source count = %d, want 1", count)
+	}
+}
+
+func assertProjectExists(t *testing.T, ctx context.Context, path, key string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path+"?mode=ro")
+	if err != nil {
+		t.Fatalf("open database read-only: %v", err)
+	}
+	defer db.Close()
+	var count int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM projects WHERE key = ?`, key).Scan(&count); err != nil {
+		t.Fatalf("count project %q: %v", key, err)
+	}
+	if count != 1 {
+		t.Fatalf("project %q count = %d, want 1", key, count)
 	}
 }

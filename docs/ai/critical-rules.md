@@ -24,11 +24,11 @@ The default path must work locally without API keys. The heuristic enricher is t
 
 The server speaks MCP over stdio. Do not write normal logs to stdout because stdout is protocol transport.
 
-`MEMORY_DB_PATH` must be explicit and absolute. Never restore, migrate, rebuild, inspect through write-capable startup, or otherwise operate on a store while its MCP server can be running; the operation lock is the enforcement mechanism, not permission to run concurrent work.
+`MEMORY_DB_PATH` must be explicit and absolute. Never run backup, restore, migration, or rebuild while its MCP server can be running; the operation lock enforces this exclusion. Read-only inspection is the sole zero-write exception and must not create or reserve the store.
 
 Existing stores must be classified before writes. Unknown, partial, future, version-gapped, or checksum-drifted schemas must fail closed. A recognized pre-ledger store is backed up before startup adopts it.
 
-Backup and restore are explicit offline operations. Restore verifies the snapshot, quarantines the original store, and does not silently overwrite an active database.
+Backup and restore are explicit offline operations. Backup must not apply runtime migrations. Restore verifies SQLite integrity and the snapshot manifest, quarantines the original store, and does not silently overwrite an active database.
 
 Tracing must require explicit payload consent. Keep `off` as the default; `metadata` is a closed non-sensitive allowlist, while `raw` is an explicit confidentiality decision. Enabled trace delivery is loopback-only, asynchronous, non-blocking, fail-silent, and must not follow redirects.
 

@@ -26,7 +26,7 @@ The server takes its required, absolute database path only from `MEMORY_DB_PATH`
 
 ### Offline continuity operations
 
-Backup, restore, and FTS rebuild are explicit `memory-maintenance` operations, excluded from the normal MCP runtime by a per-database operation lock. Authoritative rows remain the source of truth; FTS is derived and may be rebuilt from them.
+Backup, restore, and FTS rebuild are explicit `memory-maintenance` operations, excluded from the normal MCP runtime by a per-database operation lock and opened without runtime migration side effects. Read-only inspection remains zero-write. Authoritative rows remain the source of truth; FTS is derived and may be rebuilt from them.
 
 ### FTS5 before vector search
 

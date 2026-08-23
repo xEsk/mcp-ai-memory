@@ -43,29 +43,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, quarantine)
 		return
 	}
-	lock, err := storage.AcquireMaintenanceLock(*dbPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "acquiring offline maintenance lock: %v\n", err)
-		os.Exit(1)
-	}
-	defer lock.Close()
-	db, err := storage.OpenSQLite(ctx, *dbPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "opening database: %v\n", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
 	switch *operation {
 	case "backup":
-		backup, err := storage.CreateBackup(ctx, db, *dbPath)
+		backup, err := storage.BackupDatabase(ctx, *dbPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "creating backup: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Fprintln(os.Stderr, backup)
 	case "rebuild-fts":
-		if err := storage.RebuildFTS(ctx, db); err != nil {
+		if err := storage.RebuildDatabaseFTS(ctx, *dbPath); err != nil {
 			fmt.Fprintf(os.Stderr, "rebuilding FTS: %v\n", err)
 			os.Exit(1)
 		}
