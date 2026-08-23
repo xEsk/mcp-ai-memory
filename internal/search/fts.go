@@ -25,6 +25,15 @@ func NewFTS(db *sql.DB) *FTS {
 
 // Search runs text search with weighted enriched fields.
 func (f *FTS) Search(ctx context.Context, projectID, projectKey string, input Input) ([]Result, error) {
+	return f.search(ctx, projectID, projectKey, input, true)
+}
+
+// SearchWithoutRecording runs text search without changing retrieval history.
+func (f *FTS) SearchWithoutRecording(ctx context.Context, projectID, projectKey string, input Input) ([]Result, error) {
+	return f.search(ctx, projectID, projectKey, input, false)
+}
+
+func (f *FTS) search(ctx context.Context, projectID, projectKey string, input Input, recordAccess bool) ([]Result, error) {
 	limit := input.Limit
 	if limit <= 0 {
 		limit = 10
@@ -100,10 +109,20 @@ func (f *FTS) Search(ctx context.Context, projectID, projectKey string, input In
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating search results: %w", err)
 	}
-	if err := f.recordSearchAccesses(ctx, projectID, results); err != nil {
-		return nil, err
+	if recordAccess {
+		if err := f.RecordAccesses(ctx, projectID, results); err != nil {
+			return nil, err
+		}
 	}
 	return results, nil
+}
+
+// RecordAccesses records one retrieval for each distinct result memory.
+func (f *FTS) RecordAccesses(ctx context.Context, projectID string, results []Result) error {
+	if err := f.recordSearchAccesses(ctx, projectID, results); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Count counts search matches without returning memories or recording accesses.

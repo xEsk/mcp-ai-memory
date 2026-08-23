@@ -284,36 +284,54 @@ func (s *Server) handleMemorySuggest(ctx context.Context, request mcp.CallToolRe
 	}
 	query := input.Input + " " + input.Context
 	mode := search.ModePrecise
-	results, err := s.search.Search(ctx, p.ID, p.Key, search.Input{
-		Project:        input.Project,
-		Query:          query,
-		Mode:           mode,
-		Limit:          5,
-		IncludeContent: false,
-	})
+	compiled, err := search.CompileQuery(query, mode)
 	if err != nil {
-		if errors.Is(err, search.ErrInvalidMode) {
+		if errors.Is(err, search.ErrInvalidMode) || errors.Is(err, search.ErrInvalidQuery) {
 			return toolError("%v", err), nil
 		}
 		return nil, err
 	}
-	if len(results) == 0 {
+	results, err := s.search.SearchWithoutRecording(ctx, p.ID, p.Key, search.Input{
+		Project:        input.Project,
+		Query:          query,
+		Mode:           mode,
+		Limit:          5,
+		IncludeContent: true,
+	})
+	if err != nil {
+		if errors.Is(err, search.ErrInvalidMode) || errors.Is(err, search.ErrInvalidQuery) {
+			return toolError("%v", err), nil
+		}
+		return nil, err
+	}
+	if recommendedSuggestCandidateID(evaluateSuggestCandidates(compiled, results)) == "" {
 		mode = search.ModeBalanced
-		results, err = s.search.Search(ctx, p.ID, p.Key, search.Input{
-			Project:        input.Project,
-			Query:          query,
-			Mode:           mode,
-			Limit:          5,
-			IncludeContent: false,
-		})
+		compiled, err = search.CompileQuery(query, mode)
 		if err != nil {
-			if errors.Is(err, search.ErrInvalidMode) {
+			if errors.Is(err, search.ErrInvalidMode) || errors.Is(err, search.ErrInvalidQuery) {
 				return toolError("%v", err), nil
 			}
 			return nil, err
 		}
+		balanced, searchErr := s.search.SearchWithoutRecording(ctx, p.ID, p.Key, search.Input{
+			Project:        input.Project,
+			Query:          query,
+			Mode:           mode,
+			Limit:          5,
+			IncludeContent: true,
+		})
+		if searchErr != nil {
+			if errors.Is(searchErr, search.ErrInvalidMode) || errors.Is(searchErr, search.ErrInvalidQuery) {
+				return toolError("%v", searchErr), nil
+			}
+			return nil, searchErr
+		}
+		results = mergeSuggestResults(balanced, results, 5)
 	}
-	candidates := evaluateSuggestCandidates(query, mode, results)
+	if err := s.search.RecordAccesses(ctx, p.ID, results); err != nil {
+		return nil, err
+	}
+	candidates := evaluateSuggestCandidates(compiled, results)
 	recommendedCandidateID := recommendedSuggestCandidateID(candidates)
 	action := "create"
 	if recommendedCandidateID != "" {
@@ -340,6 +358,24 @@ func (s *Server) handleMemorySuggest(ctx context.Context, request mcp.CallToolRe
 		"candidates":               newSuggestCandidateOutputs(candidates),
 		"modifies_memory":          false,
 	}), nil
+}
+
+func mergeSuggestResults(primary, secondary []search.Result, limit int) []search.Result {
+	seen := map[string]bool{}
+	merged := make([]search.Result, 0, limit)
+	for _, group := range [][]search.Result{primary, secondary} {
+		for _, result := range group {
+			if seen[result.Memory.ID] {
+				continue
+			}
+			seen[result.Memory.ID] = true
+			merged = append(merged, result)
+			if len(merged) == limit {
+				return merged
+			}
+		}
+	}
+	return merged
 }
 
 func toolError(format string, args ...any) *mcp.CallToolResult {

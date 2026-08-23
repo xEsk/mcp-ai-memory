@@ -24,6 +24,16 @@ func (s *Service) Search(ctx context.Context, projectID, projectKey string, inpu
 	return s.fts.Search(ctx, projectID, projectKey, input)
 }
 
+// SearchWithoutRecording searches without changing retrieval history.
+func (s *Service) SearchWithoutRecording(ctx context.Context, projectID, projectKey string, input Input) ([]Result, error) {
+	return s.fts.SearchWithoutRecording(ctx, projectID, projectKey, input)
+}
+
+// RecordAccesses records one retrieval for each distinct result memory.
+func (s *Service) RecordAccesses(ctx context.Context, projectID string, results []Result) error {
+	return s.fts.RecordAccesses(ctx, projectID, results)
+}
+
 // Count counts search results without recording accesses.
 func (s *Service) Count(ctx context.Context, projectID, projectKey string, input Input) (int, string, error) {
 	return s.fts.Count(ctx, projectID, projectKey, input)

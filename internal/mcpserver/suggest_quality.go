@@ -1,10 +1,11 @@
 package mcpserver
 
 import (
+	"sort"
 	"strings"
-	"unicode"
 
 	"mcp-ai-memory/internal/memory"
+	"mcp-ai-memory/internal/retrievaltext"
 	"mcp-ai-memory/internal/search"
 )
 
@@ -23,11 +24,11 @@ type suggestCandidateEvaluation struct {
 	MatchReason   string
 }
 
-func evaluateSuggestCandidates(query, mode string, results []search.Result) []suggestCandidateEvaluation {
-	queryTerms := importantTerms(query)
+func evaluateSuggestCandidates(query search.CompiledQuery, results []search.Result) []suggestCandidateEvaluation {
+	queryTerms := compiledSuggestTerms(query)
 	candidates := make([]suggestCandidateEvaluation, 0, len(results))
 	for i, result := range results {
-		quality, evidence := evaluateSuggestCandidate(queryTerms, mode, result.Memory)
+		quality, evidence := evaluateSuggestCandidate(queryTerms, query.Mode, result.Memory)
 		candidates = append(candidates, suggestCandidateEvaluation{
 			Rank:          i + 1,
 			Result:        result,
@@ -36,8 +37,32 @@ func evaluateSuggestCandidates(query, mode string, results []search.Result) []su
 			MatchReason:   suggestMatchReason(quality),
 		})
 	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left, right := suggestQualityRank(candidates[i].Quality), suggestQualityRank(candidates[j].Quality)
+		if left != right {
+			return left > right
+		}
+		if candidates[i].EvidenceScore != candidates[j].EvidenceScore {
+			return candidates[i].EvidenceScore > candidates[j].EvidenceScore
+		}
+		return candidates[i].Rank < candidates[j].Rank
+	})
+	for i := range candidates {
+		candidates[i].Rank = i + 1
+	}
 	markRecommendedSuggestCandidate(candidates)
 	return candidates
+}
+
+func suggestQualityRank(quality string) int {
+	switch quality {
+	case suggestQualityStrong:
+		return 3
+	case suggestQualityPossible:
+		return 2
+	default:
+		return 1
+	}
 }
 
 func evaluateSuggestCandidate(queryTerms map[string]bool, mode string, candidate memory.Memory) (string, int) {
@@ -135,6 +160,7 @@ func suggestMatchReason(quality string) string {
 
 func candidateMetadataText(m memory.Memory) string {
 	parts := []string{
+		m.Content,
 		m.Summary,
 		m.ShortSummary,
 		strings.Join(m.Keywords, " "),
@@ -148,20 +174,21 @@ func candidateMetadataText(m memory.Memory) string {
 
 func importantTerms(text string) map[string]bool {
 	terms := map[string]bool{}
-	for _, term := range splitSuggestTerms(text) {
-		term = strings.ToLower(strings.Trim(term, `"*'.,;:()[]{}?¿!¡`))
-		if len(term) < 3 || suggestStopWords[term] {
+	for _, token := range retrievaltext.Tokenize(text) {
+		if token.RuneCount < 3 || suggestStopWords[token.Text] {
 			continue
 		}
-		terms[term] = true
+		terms[token.Text] = true
 	}
 	return terms
 }
 
-func splitSuggestTerms(text string) []string {
-	return strings.FieldsFunc(text, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' && r != '/' && r != '.'
-	})
+func compiledSuggestTerms(query search.CompiledQuery) map[string]bool {
+	terms := make(map[string]bool, len(query.Terms))
+	for _, term := range query.Terms {
+		terms[term.Text] = true
+	}
+	return terms
 }
 
 func overlapCounts(queryTerms, candidateTerms map[string]bool) (int, int) {

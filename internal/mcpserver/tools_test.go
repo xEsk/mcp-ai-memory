@@ -2,7 +2,10 @@ package mcpserver
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -24,7 +27,7 @@ func TestMemorySuggestStrongMatchRecommendsUpdate(t *testing.T) {
 		Project:    "api",
 		Type:       memory.TypeImplementation,
 		Title:      "Invoice route handler",
-		Content:    "Invoice route handler calls InvoiceController to validate invoice payloads.",
+		Content:    "Invoice route handler calls InvoiceController to validate invoice payloads. PRIVATE-SENTINEL",
 		Importance: 3,
 		Enrich:     true,
 	})
@@ -89,6 +92,71 @@ func TestMemorySuggestStrongMatchRecommendsUpdate(t *testing.T) {
 	}
 	if candidates[0].MatchReason != "strong title and metadata overlap" {
 		t.Fatalf("match reason = %q, want strong semantic reason", candidates[0].MatchReason)
+	}
+	encoded, err := json.Marshal(content)
+	if err != nil {
+		t.Fatalf("marshal response: %v", err)
+	}
+	if strings.Contains(string(encoded), "PRIVATE-SENTINEL") {
+		t.Fatalf("suggest response exposed private candidate content: %s", encoded)
+	}
+	if candidates[0].Memory.RetrievalCount != 1 {
+		t.Fatalf("retrieval count = %d, want 1", candidates[0].Memory.RetrievalCount)
+	}
+}
+
+func TestMemorySuggestBroadensWeakPreciseCandidatesAndRecordsFinalSetOnce(t *testing.T) {
+	ctx, server, projects, memories, db := newSuggestTestServerWithDB(t)
+	if _, err := projects.Upsert(ctx, project.UpsertInput{Key: "api", Name: "API"}); err != nil {
+		t.Fatalf("upsert project: %v", err)
+	}
+	weak, err := memories.Upsert(ctx, memory.UpsertInput{
+		Project: "api", Type: memory.TypeOther, Title: "General record",
+		Content: "Invoice route project task memory", Importance: 2, Enrich: true,
+	})
+	if err != nil {
+		t.Fatalf("upsert weak memory: %v", err)
+	}
+	strong, err := memories.Upsert(ctx, memory.UpsertInput{
+		Project: "api", Type: memory.TypeImplementation, Title: "Invoice route",
+		Content: "Invoice endpoint ownership", Importance: 5, Enrich: true,
+	})
+	if err != nil {
+		t.Fatalf("upsert strong memory: %v", err)
+	}
+
+	result, err := server.handleMemorySuggest(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+		"project": "api",
+		"input":   "Invoice route project task memory",
+	}}})
+	if err != nil {
+		t.Fatalf("suggest memory: %v", err)
+	}
+	content, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("structured content type = %T, want map[string]any", result.StructuredContent)
+	}
+	if content["search_mode"] != search.ModeBalanced {
+		t.Fatalf("search mode = %q, want %q", content["search_mode"], search.ModeBalanced)
+	}
+	if content["suggested_action"] != "update_existing" || content["recommended_candidate_id"] != strong.ID {
+		t.Fatalf("suggestion = (%q, %q), want update_existing for %q", content["suggested_action"], content["recommended_candidate_id"], strong.ID)
+	}
+	candidates, ok := content["candidates"].([]suggestCandidateOutput)
+	if !ok || len(candidates) != 2 {
+		t.Fatalf("candidates = %#v, want two deduplicated candidates", content["candidates"])
+	}
+	if candidates[0].Memory.ID != strong.ID || !candidates[0].IsRecommended {
+		t.Fatalf("first candidate = %#v, want recommended %q", candidates[0], strong.ID)
+	}
+	for _, stored := range []*memory.Memory{weak, strong} {
+		var retrievalCount int
+		if err := db.QueryRowContext(ctx, `SELECT access_count FROM memories WHERE id = ?`, stored.ID).Scan(&retrievalCount); err != nil {
+			t.Fatalf("read candidate %q retrieval count: %v", stored.ID, err)
+		}
+		if retrievalCount != 1 {
+			t.Fatalf("candidate %q retrieval count = %d, want 1", stored.ID, retrievalCount)
+		}
 	}
 }
 
@@ -375,6 +443,18 @@ func newSuggestTestServer(t *testing.T) (
 	*memory.Service,
 ) {
 	t.Helper()
+	ctx, server, projects, memories, _ := newSuggestTestServerWithDB(t)
+	return ctx, server, projects, memories
+}
+
+func newSuggestTestServerWithDB(t *testing.T) (
+	context.Context,
+	*Server,
+	*project.Service,
+	*memory.Service,
+	*sql.DB,
+) {
+	t.Helper()
 	ctx := context.Background()
 	db, err := storage.OpenSQLite(ctx, filepath.Join(t.TempDir(), "memory.db"))
 	if err != nil {
@@ -391,5 +471,5 @@ func newSuggestTestServer(t *testing.T) (
 	memories := memory.NewService(memory.NewRepository(db), projects, enrich.NewLocalHeuristicEnricher(), clock)
 	server := New(projects, memories, search.NewService(search.NewFTS(db)))
 
-	return ctx, server, projects, memories
+	return ctx, server, projects, memories, db
 }
