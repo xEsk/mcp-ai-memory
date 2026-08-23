@@ -149,6 +149,13 @@ func TestMemorySuggestBroadensWeakPreciseCandidatesAndRecordsFinalSetOnce(t *tes
 	if candidates[0].Memory.ID != strong.ID || !candidates[0].IsRecommended {
 		t.Fatalf("first candidate = %#v, want recommended %q", candidates[0], strong.ID)
 	}
+	seen := map[string]bool{}
+	for _, candidate := range candidates {
+		if seen[candidate.Memory.ID] {
+			t.Fatalf("duplicate public candidate ID %q", candidate.Memory.ID)
+		}
+		seen[candidate.Memory.ID] = true
+	}
 	for _, stored := range []*memory.Memory{weak, strong} {
 		var retrievalCount int
 		if err := db.QueryRowContext(ctx, `SELECT access_count FROM memories WHERE id = ?`, stored.ID).Scan(&retrievalCount); err != nil {

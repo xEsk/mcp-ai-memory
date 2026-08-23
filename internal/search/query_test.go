@@ -52,3 +52,21 @@ func TestCompileQueryEscapesFTSOperatorsAsData(t *testing.T) {
 		t.Fatalf("expression = %q, want %q", compiled.Expression, want)
 	}
 }
+
+func TestCompileQueryTechnicalCompatibilityMatrix(t *testing.T) {
+	for _, query := range []string{
+		"C R x Go DB UI io v2 S3 x509",
+		"API MCP SQL JWT OR IN com.example",
+		"io.Reader context.Context ErrNotFound memory_fts x-request-id",
+		`internal/search/fts.go go.mod .env C:\\workspace\\memory.db`,
+		`C# C++ "quoted words"`,
+	} {
+		compiled, err := CompileQuery(query, ModePrecise)
+		if err != nil {
+			t.Fatalf("CompileQuery(%q): %v", query, err)
+		}
+		if compiled.Expression == "" || len(compiled.Terms) == 0 {
+			t.Fatalf("CompileQuery(%q) = %#v, want searchable terms", query, compiled)
+		}
+	}
+}

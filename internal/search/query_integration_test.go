@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -79,5 +80,13 @@ func TestFTSShortTechnicalTermsRemainExactAndProjectScoped(t *testing.T) {
 				t.Fatalf("search query %q returned %#v, want only %q", test.query, results, test.want)
 			}
 		})
+	}
+
+	empty := Input{Project: projectKey, Query: "the and how", Mode: ModePrecise}
+	if _, _, err := fts.Count(ctx, projectID, projectKey, empty); !errors.Is(err, ErrInvalidQuery) {
+		t.Fatalf("count empty normalized query error = %v, want ErrInvalidQuery", err)
+	}
+	if _, err := fts.Search(ctx, projectID, projectKey, empty); !errors.Is(err, ErrInvalidQuery) {
+		t.Fatalf("search empty normalized query error = %v, want ErrInvalidQuery", err)
 	}
 }
