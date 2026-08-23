@@ -23,3 +23,15 @@ func TestTokenizeDeduplicatesCaseInsensitivelyAndHandlesMalformedUTF8(t *testing
 		t.Fatalf("tokens = %#v, want go and db", tokens)
 	}
 }
+
+func TestTokenizeAllPreservesSourceOrderAndRepetitions(t *testing.T) {
+	tokens := TokenizeAll("API api route")
+	var got []string
+	for _, token := range tokens {
+		got = append(got, token.Text)
+	}
+	want := []string{"api", "api", "route"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("tokens = %v, want %v", got, want)
+	}
+}

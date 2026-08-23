@@ -2,13 +2,14 @@ package enrich
 
 import (
 	"context"
-	"regexp"
 	"sort"
 	"strings"
 	"unicode"
+
+	"mcp-ai-memory/internal/retrievaltext"
 )
 
-var tokenPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9_./:-]{2,}`)
+const searchPhraseLimit = 18
 
 // LocalHeuristicEnricher generates basic metadata without external calls.
 type LocalHeuristicEnricher struct{}
@@ -22,21 +23,16 @@ func NewLocalHeuristicEnricher() *LocalHeuristicEnricher {
 func (e *LocalHeuristicEnricher) EnrichMemory(ctx context.Context, input EnrichInput) (*EnrichOutput, error) {
 	_ = ctx
 	text := strings.TrimSpace(input.Title + "\n" + input.Content)
-	summary := firstSentence(input.Content, 420)
-	short := firstSentence(input.Content, 160)
 	keywords := topTokens(text, 24)
 	entities := technicalEntities(text, 24)
-	tags := mergeUnique(input.Tags, inferTags(input.Type, text))
-	phrases := searchPhrases(input, keywords, entities)
-
 	return &EnrichOutput{
-		Summary:             summary,
-		ShortSummary:        short,
+		Summary:             firstSentence(input.Content, 420),
+		ShortSummary:        firstSentence(input.Content, 160),
 		Keywords:            keywords,
-		Tags:                tags,
+		Tags:                mergeUnique(input.Tags, inferTags(input.Type, text)),
 		Entities:            entities,
-		Aliases:             aliasesFor(keywords, entities),
-		SearchPhrases:       phrases,
+		Aliases:             aliasesFor(text),
+		SearchPhrases:       searchPhrases(input, keywords, entities),
 		SuggestedType:       input.Type,
 		SuggestedImportance: normalizeImportance(input.Importance),
 	}, nil
@@ -44,33 +40,42 @@ func (e *LocalHeuristicEnricher) EnrichMemory(ctx context.Context, input EnrichI
 
 func firstSentence(text string, limit int) string {
 	text = strings.Join(strings.Fields(text), " ")
-	if len(text) <= limit {
+	runes := []rune(text)
+	if len(runes) <= limit {
 		return text
 	}
-	cut := strings.LastIndexAny(text[:limit], ".;")
+	cut := lastRuneIndexAny(runes[:limit], ".;")
 	if cut < limit/3 {
-		cut = strings.LastIndex(text[:limit], " ")
+		cut = lastRuneIndexAny(runes[:limit], " ")
 	}
 	if cut <= 0 {
 		cut = limit
 	}
-	return strings.TrimSpace(text[:cut])
+	return strings.TrimSpace(string(runes[:cut]))
+}
+
+func lastRuneIndexAny(runes []rune, chars string) int {
+	for i := len(runes) - 1; i >= 0; i-- {
+		if strings.ContainsRune(chars, runes[i]) {
+			return i
+		}
+	}
+	return -1
 }
 
 func topTokens(text string, limit int) []string {
 	counts := map[string]int{}
-	for _, token := range tokenPattern.FindAllString(text, -1) {
-		key := strings.ToLower(strings.Trim(token, ".,;()[]{}"))
-		if stopWords[key] || len(key) < 3 {
+	for _, token := range retrievaltext.TokenizeAll(text) {
+		if stopWords[token.Text] || (token.RuneCount < 3 && !shortTechnicalTokens[token.Text]) {
 			continue
 		}
-		counts[key]++
+		counts[token.Text]++
 	}
 	type pair struct {
 		token string
 		count int
 	}
-	var pairs []pair
+	pairs := make([]pair, 0, len(counts))
 	for token, count := range counts {
 		pairs = append(pairs, pair{token: token, count: count})
 	}
@@ -80,7 +85,7 @@ func topTokens(text string, limit int) []string {
 		}
 		return pairs[i].count > pairs[j].count
 	})
-	var out []string
+	out := make([]string, 0, min(limit, len(pairs)))
 	for _, pair := range pairs {
 		out = append(out, pair.token)
 		if len(out) == limit {
@@ -93,39 +98,65 @@ func topTokens(text string, limit int) []string {
 func technicalEntities(text string, limit int) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, token := range tokenPattern.FindAllString(text, -1) {
-		if seen[token] {
+	for _, candidate := range technicalCandidates(text) {
+		identity := strings.ToLower(candidate)
+		if seen[identity] || (!strings.ContainsAny(candidate, "./:_-") && !hasUpper(candidate)) {
 			continue
 		}
-		if strings.ContainsAny(token, "./:_-") || hasUpper(token) {
-			seen[token] = true
-			out = append(out, token)
-			if len(out) == limit {
-				break
-			}
+		seen[identity] = true
+		out = append(out, candidate)
+		if len(out) == limit {
+			break
 		}
 	}
 	return out
 }
 
-func inferTags(memoryType, text string) []string {
-	lower := strings.ToLower(text)
-	tags := []string{memoryType}
-	candidates := map[string][]string{
-		"api":        {"api", "endpoint", "http", "route", "axios", "fetch"},
-		"database":   {"sql", "sqlite", "repository", "migration", "query"},
-		"frontend":   {"ui", "component", "react", "vue", "css"},
-		"backend":    {"service", "handler", "controller", "middleware"},
-		"workflow":   {"build", "test", "deploy", "makefile", "command"},
-		"bug":        {"bug", "error", "fallback", "fix", "regression"},
-		"convention": {"convention", "style", "pattern", "naming"},
+func technicalCandidates(text string) []string {
+	var out []string
+	var current []rune
+	flush := func() {
+		candidate := strings.Trim(string(current), `.,;()[]{}!?¿¡"'`)
+		current = current[:0]
+		if candidate != "" {
+			out = append(out, candidate)
+		}
 	}
-	for tag, words := range candidates {
-		for _, word := range words {
-			if strings.Contains(lower, word) {
-				tags = append(tags, tag)
-				break
-			}
+	for _, r := range text {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsMark(r) || strings.ContainsRune("./:_-", r) {
+			current = append(current, r)
+			continue
+		}
+		flush()
+	}
+	flush()
+	return out
+}
+
+type tagRule struct {
+	tag     string
+	phrases []string
+}
+
+var orderedTagRules = []tagRule{
+	{tag: "api", phrases: []string{"api", "endpoint", "http", "route", "axios", "fetch"}},
+	{tag: "database", phrases: []string{"sql", "sqlite", "repository", "migration", "query"}},
+	{tag: "frontend", phrases: []string{"ui", "component", "react", "vue", "css"}},
+	{tag: "backend", phrases: []string{"service", "handler", "controller", "middleware"}},
+	{tag: "workflow", phrases: []string{"build", "test", "deploy", "makefile", "command"}},
+	{tag: "bug", phrases: []string{"bug", "error", "fallback", "fix", "regression"}},
+	{tag: "convention", phrases: []string{"convention", "style", "pattern", "naming"}},
+}
+
+func inferTags(memoryType, text string) []string {
+	tokens := normalizedTokenTexts(text)
+	var tags []string
+	if strings.TrimSpace(memoryType) != "" {
+		tags = append(tags, memoryType)
+	}
+	for _, rule := range orderedTagRules {
+		if containsAnyPhrase(tokens, rule.phrases) {
+			tags = append(tags, rule.tag)
 		}
 	}
 	return tags
@@ -137,26 +168,68 @@ func searchPhrases(input EnrichInput, keywords, entities []string) []string {
 		"where is " + input.Title + " implemented",
 		"project convention " + input.Title,
 	}
-	for _, token := range append(keywords, entities...) {
+	for _, token := range append(append([]string{}, keywords...), entities...) {
 		base = append(base, "how do we use "+token, "where is "+token)
-		if len(base) > 18 {
-			break
-		}
 	}
-	return mergeUnique(base, nil)
+	return mergeUniqueLimit(searchPhraseLimit, base...)
 }
 
-func aliasesFor(keywords, entities []string) []string {
+type aliasRule struct {
+	phrase string
+	values []string
+}
+
+var orderedAliasRules = []aliasRule{
+	{phrase: "api", values: []string{"http client", "route helper", "endpoint"}},
+	{phrase: "repository", values: []string{"storage", "persistence", "queries"}},
+}
+
+func aliasesFor(text string) []string {
+	tokens := normalizedTokenTexts(text)
 	var aliases []string
-	for _, token := range append(keywords, entities...) {
-		if strings.Contains(token, "api") {
-			aliases = append(aliases, "http client", "route helper", "endpoint")
-		}
-		if strings.Contains(token, "repository") {
-			aliases = append(aliases, "storage", "persistence", "queries")
+	for _, rule := range orderedAliasRules {
+		if containsPhrase(tokens, normalizedTokenTexts(rule.phrase)) {
+			aliases = append(aliases, rule.values...)
 		}
 	}
-	return mergeUnique(aliases, nil)
+	return mergeUnique(aliases)
+}
+
+func normalizedTokenTexts(text string) []string {
+	tokens := retrievaltext.TokenizeAll(text)
+	out := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		out = append(out, token.Text)
+	}
+	return out
+}
+
+func containsAnyPhrase(tokens []string, phrases []string) bool {
+	for _, phrase := range phrases {
+		if containsPhrase(tokens, normalizedTokenTexts(phrase)) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsPhrase(tokens, phrase []string) bool {
+	if len(phrase) == 0 || len(phrase) > len(tokens) {
+		return false
+	}
+	for start := 0; start <= len(tokens)-len(phrase); start++ {
+		matched := true
+		for i := range phrase {
+			if tokens[start+i] != phrase[i] {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeImportance(value int) int {
@@ -170,16 +243,26 @@ func normalizeImportance(value int) int {
 }
 
 func mergeUnique(groups ...[]string) []string {
+	var values []string
+	for _, group := range groups {
+		values = append(values, group...)
+	}
+	return mergeUniqueLimit(0, values...)
+}
+
+func mergeUniqueLimit(limit int, values ...string) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, group := range groups {
-		for _, value := range group {
-			value = strings.TrimSpace(value)
-			if value == "" || seen[value] {
-				continue
-			}
-			seen[value] = true
-			out = append(out, value)
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		identity := strings.ToLower(value)
+		if value == "" || seen[identity] {
+			continue
+		}
+		seen[identity] = true
+		out = append(out, value)
+		if limit > 0 && len(out) == limit {
+			break
 		}
 	}
 	return out
@@ -192,6 +275,10 @@ func hasUpper(value string) bool {
 		}
 	}
 	return false
+}
+
+var shortTechnicalTokens = map[string]bool{
+	"c": true, "r": true, "go": true, "db": true, "ui": true, "io": true,
 }
 
 var stopWords = map[string]bool{
