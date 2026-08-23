@@ -8,15 +8,17 @@ import (
 )
 
 type memoryOutput struct {
-	ID         string    `json:"id"`
-	Project    string    `json:"project"`
-	Type       string    `json:"type"`
-	Title      string    `json:"title"`
-	Content    string    `json:"content,omitempty"`
-	Importance int       `json:"importance"`
-	Source     string    `json:"source,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID              string     `json:"id"`
+	Project         string     `json:"project"`
+	Type            string     `json:"type"`
+	Title           string     `json:"title"`
+	Content         string     `json:"content,omitempty"`
+	Importance      int        `json:"importance"`
+	Source          string     `json:"source,omitempty"`
+	RetrievalCount  int        `json:"retrieval_count"`
+	LastRetrievedAt *time.Time `json:"last_retrieved_at"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 type searchDebugOutput struct {
@@ -36,14 +38,16 @@ type suggestCandidateOutput struct {
 
 func newMemoryOutput(m memory.Memory, includeContent bool) memoryOutput {
 	out := memoryOutput{
-		ID:         m.ID,
-		Project:    m.ProjectKey,
-		Type:       m.Type,
-		Title:      m.Title,
-		Importance: m.Importance,
-		Source:     m.Source,
-		CreatedAt:  m.CreatedAt,
-		UpdatedAt:  m.UpdatedAt,
+		ID:              m.ID,
+		Project:         m.ProjectKey,
+		Type:            m.Type,
+		Title:           m.Title,
+		Importance:      m.Importance,
+		Source:          m.Source,
+		RetrievalCount:  m.AccessCount,
+		LastRetrievedAt: m.LastAccessedAt,
+		CreatedAt:       m.CreatedAt,
+		UpdatedAt:       m.UpdatedAt,
 	}
 	if includeContent {
 		out.Content = m.Content
