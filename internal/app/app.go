@@ -19,17 +19,26 @@ import (
 
 // App groups the server's main dependencies.
 type App struct {
-	DB     *sql.DB
-	Server *mcpserver.Server
+	DB          *sql.DB
+	Server      *mcpserver.Server
+	runtimeLock *storage.OperationLock
 }
 
 // New builds the full application from configuration.
 func New(ctx context.Context, cfg Config) (*App, error) {
+	if err := validateDBPath(cfg.DBPath); err != nil {
+		return nil, err
+	}
 	if err := validateTraceConfig(cfg); err != nil {
+		return nil, err
+	}
+	runtimeLock, err := storage.AcquireRuntimeLock(cfg.DBPath)
+	if err != nil {
 		return nil, err
 	}
 	db, err := storage.OpenSQLite(ctx, cfg.DBPath)
 	if err != nil {
+		_ = runtimeLock.Close()
 		return nil, err
 	}
 	clock := platform.NewClock()
@@ -40,20 +49,29 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	tracer, err := buildTraceSink(cfg)
 	if err != nil {
 		_ = db.Close()
+		_ = runtimeLock.Close()
 		return nil, err
 	}
 	server := mcpserver.New(projectService, memoryService, searchService, tracer)
 
-	return &App{DB: db, Server: server}, nil
+	return &App{DB: db, Server: server, runtimeLock: runtimeLock}, nil
 }
 
 // Close releases application resources.
 func (a *App) Close() error {
-	if a.DB == nil {
-		return nil
+	var dbErr error
+	if a.DB != nil {
+		dbErr = a.DB.Close()
 	}
-	if err := a.DB.Close(); err != nil {
-		return fmt.Errorf("closing database: %w", err)
+	var lockErr error
+	if a.runtimeLock != nil {
+		lockErr = a.runtimeLock.Close()
+	}
+	if dbErr != nil {
+		return fmt.Errorf("closing database: %w", dbErr)
+	}
+	if lockErr != nil {
+		return fmt.Errorf("releasing runtime lock: %w", lockErr)
 	}
 	return nil
 }

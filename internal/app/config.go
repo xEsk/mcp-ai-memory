@@ -1,8 +1,11 @@
 package app
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -27,10 +30,10 @@ type Config struct {
 	TraceDebug        bool
 }
 
-// LoadConfig loads configuration with safe defaults for local use.
+// LoadConfig loads configuration from environment variables.
 func LoadConfig() Config {
 	return Config{
-		DBPath:            envString("MEMORY_DB_PATH", "./data/memory.db"),
+		DBPath:            os.Getenv("MEMORY_DB_PATH"),
 		Enricher:          envString("MEMORY_ENRICHER", "heuristic"),
 		LLMBaseURL:        envString("MEMORY_LLM_BASE_URL", "https://api.openai.com/v1"),
 		LLMAPIKey:         os.Getenv("MEMORY_LLM_API_KEY"),
@@ -43,6 +46,17 @@ func LoadConfig() Config {
 		TraceBufferSize:   envInt("MEMORY_TRACE_BUFFER_SIZE", 256),
 		TraceDebug:        envBool("MEMORY_TRACE_DEBUG", false),
 	}
+}
+
+// validateDBPath validates the configured database identity before storage access.
+func validateDBPath(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("MEMORY_DB_PATH is required")
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("MEMORY_DB_PATH must be absolute")
+	}
+	return nil
 }
 
 func envString(key, fallback string) string {

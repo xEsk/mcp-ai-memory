@@ -7,9 +7,10 @@ It stores memories per project, enriches them for AI retrieval, and searches the
 ## Run
 
 ```bash
-cp .env.example .env
-go run ./cmd/memory-mcp
+MEMORY_DB_PATH=/absolute/path/to/memory.db go run ./cmd/memory-mcp
 ```
+
+The process environment is the only runtime configuration authority. The database path is required and must be absolute; the binary does not load `.env` files.
 
 The server uses MCP over stdio. For desktop MCP clients, build the binary and adapt `examples/claude_desktop_config.json`.
 
@@ -90,6 +91,17 @@ OpenCode loads config at startup, so quit and restart OpenCode after changing th
 - `memory.suggest`
 
 All memory tools require `project` to avoid cross-project context leakage.
+
+## Offline maintenance
+
+Stop MCP instances before maintenance. Create a verified snapshot or rebuild the derived FTS index from authoritative rows with an explicit absolute path:
+
+```bash
+go run ./cmd/memory-maintenance --operation inspect --db /absolute/path/to/memory.db
+go run ./cmd/memory-maintenance --operation backup --db /absolute/path/to/memory.db
+go run ./cmd/memory-maintenance --operation restore --db /absolute/path/to/memory.db --backup /absolute/path/to/snapshot.db
+go run ./cmd/memory-maintenance --operation rebuild-fts --db /absolute/path/to/memory.db
+```
 
 ## Documentation
 
