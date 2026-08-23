@@ -1,11 +1,14 @@
 {
-  "corpus_version": "2026-07-14-v1",
-  "query_version": "2026-07-14-v1",
-  "slices": ["identifier_path", "natural_language", "enrichment_only", "shared_vocabulary", "near_duplicate", "multilingual", "no_match"],
+  "corpus_version": "2026-08-24-v2",
+  "query_version": "2026-08-24-v2",
+  "slices": ["identifier_path", "natural_language", "enrichment_only", "shared_vocabulary", "near_duplicate", "multilingual", "short_technical", "unicode", "heuristic_hard_negative", "no_match"],
   "projects": [
     {"key": "atlas-api", "name": "Atlas API"},
     {"key": "atlas-ui", "name": "Atlas UI"},
-    {"key": "northstar-ops", "name": "Northstar Operations"}
+    {"key": "northstar-ops", "name": "Northstar Operations"},
+    {"key": "negative-build", "name": "Build Negative"},
+    {"key": "negative-contest", "name": "Contest Negative"},
+    {"key": "negative-capitalization", "name": "Capitalization Negative"}
   ],
   "memories": [
     {"id": "api-route-registry", "project": "atlas-api", "type": "implementation", "title": "Route registry ROUTE-REG-42", "content": "The route registry lives at /internal/routes/registry.go and validates endpoint ownership before deployment.", "tags": ["routing"], "importance": 5},
@@ -18,7 +21,15 @@
     {"id": "api-cache-distractor", "project": "atlas-api", "type": "workflow", "title": "Cache review notes", "content": "Cache review notes describe dashboard labels and do not run a migration.", "tags": ["cache"], "importance": 1},
     {"id": "ui-route-registry-copy", "project": "atlas-ui", "type": "implementation", "title": "Route registry ROUTE-REG-42", "content": "The UI copied route registry wording but its file is /web/routes/registry.ts.", "tags": ["routing"], "importance": 5},
     {"id": "ui-token-rotation-copy", "project": "atlas-ui", "type": "workflow", "title": "Token rotation runbook", "content": "The UI rotation runbook refreshes browser tokens and is not the API gateway procedure.", "tags": ["security"], "importance": 4},
-    {"id": "ops-cache-migration-copy", "project": "northstar-ops", "type": "workflow", "title": "Cache migration workflow", "content": "Operations run cache migration on monitoring snapshots, separate from Atlas API catalog warming.", "tags": ["cache"], "importance": 4}
+    {"id": "ops-cache-migration-copy", "project": "northstar-ops", "type": "workflow", "title": "Cache migration workflow", "content": "Operations run cache migration on monitoring snapshots, separate from Atlas API catalog warming.", "tags": ["cache"], "importance": 4},
+    {"id": "api-short-go", "project": "atlas-api", "type": "implementation", "title": "Go language", "content": "Go is used for the memory service.", "tags": ["language"], "importance": 4},
+    {"id": "api-short-db", "project": "atlas-api", "type": "implementation", "title": "DB boundary", "content": "DB transactions protect each write.", "tags": ["storage"], "importance": 4},
+    {"id": "api-short-io", "project": "atlas-api", "type": "implementation", "title": "io.Reader boundary", "content": "The io.Reader interface streams backup data.", "tags": ["go"], "importance": 4},
+    {"id": "api-iostream-distractor", "project": "atlas-api", "type": "implementation", "title": "iostream note", "content": "The iostream token belongs to a C++ migration note.", "tags": ["legacy"], "importance": 2},
+    {"id": "api-munich-unicode", "project": "atlas-api", "type": "implementation", "title": "München deployment", "content": "La configuració de München conserva identificadors Unicode.", "tags": ["unicode"], "importance": 4},
+    {"id": "negative-build-memory", "project": "negative-build", "type": "other", "title": "Build handbook", "content": "The build handbook documents compiler flags.", "tags": [], "importance": 3},
+    {"id": "negative-contest-memory", "project": "negative-contest", "type": "other", "title": "Contest rules", "content": "Contest scoring is unrelated to software verification.", "tags": [], "importance": 3},
+    {"id": "negative-capitalization-memory", "project": "negative-capitalization", "type": "other", "title": "Capitalization guide", "content": "Capitalization rules preserve sentence case.", "tags": [], "importance": 3}
   ],
   "queries": [
     {"id": "identifier-route-registry", "project": "atlas-api", "text": "ROUTE-REG-42", "mode": "precise", "slice": "identifier_path", "critical": true, "judgments": [{"memory_id": "api-route-registry", "grade": 3}]},
@@ -28,6 +39,14 @@
     {"id": "cache-migration", "project": "atlas-api", "text": "cache migration", "mode": "broad", "slice": "shared_vocabulary", "critical": false, "judgments": [{"memory_id": "api-cache-migration", "grade": 3}, {"memory_id": "api-cache-distractor", "grade": 1}]},
     {"id": "token-runbook", "project": "atlas-api", "text": "token rotation runbook", "mode": "precise", "slice": "near_duplicate", "critical": true, "judgments": [{"memory_id": "api-token-rotation", "grade": 3}]},
     {"id": "factura-cierre", "project": "atlas-api", "text": "cierre transaccional factura", "mode": "precise", "slice": "multilingual", "critical": true, "judgments": [{"memory_id": "api-factura-cierre", "grade": 3}]},
+    {"id": "short-go", "project": "atlas-api", "text": "Go", "mode": "precise", "slice": "short_technical", "critical": true, "judgments": [{"memory_id": "api-short-go", "grade": 3}]},
+    {"id": "short-db", "project": "atlas-api", "text": "DB", "mode": "precise", "slice": "short_technical", "critical": true, "judgments": [{"memory_id": "api-short-db", "grade": 3}]},
+    {"id": "short-io", "project": "atlas-api", "text": "io", "mode": "precise", "slice": "short_technical", "critical": true, "judgments": [{"memory_id": "api-short-io", "grade": 3}, {"memory_id": "api-iostream-distractor", "grade": 0}]},
+    {"id": "unicode-munich", "project": "atlas-api", "text": "München", "mode": "precise", "slice": "unicode", "critical": true, "judgments": [{"memory_id": "api-munich-unicode", "grade": 3}]},
+    {"id": "negative-build-source", "project": "negative-build", "text": "build", "mode": "precise", "slice": "heuristic_hard_negative", "critical": true, "judgments": [{"memory_id": "negative-build-memory", "grade": 3}]},
+    {"id": "negative-build-ui", "project": "negative-build", "text": "frontend", "mode": "precise", "slice": "heuristic_hard_negative", "critical": true, "no_match": true},
+    {"id": "negative-contest-test", "project": "negative-contest", "text": "workflow", "mode": "precise", "slice": "heuristic_hard_negative", "critical": true, "no_match": true},
+    {"id": "negative-capitalization-api", "project": "negative-capitalization", "text": "route helper", "mode": "precise", "slice": "heuristic_hard_negative", "critical": true, "no_match": true},
     {"id": "hard-negative", "project": "atlas-api", "text": "unicorn quantum lattice", "mode": "precise", "slice": "no_match", "critical": true, "no_match": true}
   ],
   "baseline": {
@@ -39,6 +58,9 @@
       "shared_vocabulary": {"hit_at_1": 1.0, "recall_at_5": 1.0, "mrr_at_10": 1.0, "ndcg_at_5": 1.0},
       "near_duplicate": {"hit_at_1": 1.0, "recall_at_5": 1.0, "mrr_at_10": 1.0, "ndcg_at_5": 1.0},
       "multilingual": {"hit_at_1": 1.0, "recall_at_5": 1.0, "mrr_at_10": 1.0, "ndcg_at_5": 1.0},
+      "short_technical": {"hit_at_1": 1.0, "recall_at_5": 1.0, "mrr_at_10": 1.0, "ndcg_at_5": 1.0},
+      "unicode": {"hit_at_1": 1.0, "recall_at_5": 1.0, "mrr_at_10": 1.0, "ndcg_at_5": 1.0},
+      "heuristic_hard_negative": {"hit_at_1": 1.0, "recall_at_5": 1.0, "mrr_at_10": 1.0, "ndcg_at_5": 1.0},
       "no_match": {"hit_at_1": 0.0, "recall_at_5": 0.0, "mrr_at_10": 0.0, "ndcg_at_5": 0.0}
     }
   }

@@ -19,10 +19,10 @@ import (
 	"mcp-ai-memory/internal/storage"
 )
 
-//go:embed testdata/retrieval_quality_corpus_v1.json
+//go:embed testdata/retrieval_quality_corpus_v2.json
 var retrievalQualityCorpusV1 []byte
 
-const retrievalQualityVersion = "2026-07-14-v1"
+const retrievalQualityVersion = "2026-08-24-v2"
 
 type qualityCorpus struct {
 	CorpusVersion string           `json:"corpus_version"`
