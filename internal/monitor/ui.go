@@ -126,9 +126,10 @@ const indexHTML = `<!doctype html>
     const status = document.getElementById("status");
     const source = new EventSource("/events/stream");
     const rows = [];
-    let droppedEvents = 0;
+    const droppedBySession = new Map();
 
     function liveStatus() {
+      const droppedEvents = Array.from(droppedBySession.values()).reduce((total, value) => total + value, 0);
       return droppedEvents ? "live · dropped " + droppedEvents : "live";
     }
 
@@ -137,7 +138,9 @@ const indexHTML = `<!doctype html>
     source.onmessage = (message) => {
       const event = JSON.parse(message.data);
       if (event.dropped_events) {
-        droppedEvents = Math.max(droppedEvents, Number(event.dropped_events));
+        const session = event.session_id || "pid:" + String(event.pid || "unknown");
+        const previous = droppedBySession.get(session) || 0;
+        droppedBySession.set(session, Math.max(previous, Number(event.dropped_events)));
         status.textContent = liveStatus();
       }
       rows.unshift(event);

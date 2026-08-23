@@ -64,20 +64,25 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) appendEvent(event trace.Event) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.events = append(s.events, event)
 	if len(s.events) > s.limit {
 		s.events = append([]trace.Event(nil), s.events[len(s.events)-s.limit:]...)
 	}
-	subscribers := make([]chan trace.Event, 0, len(s.subscribers))
 	for subscriber := range s.subscribers {
-		subscribers = append(subscribers, subscriber)
-	}
-	s.mu.Unlock()
-
-	for _, subscriber := range subscribers {
 		select {
 		case subscriber <- event:
 		default:
+			if event.Phase == trace.PhaseHealth {
+				select {
+				case <-subscriber:
+				default:
+				}
+				select {
+				case subscriber <- event:
+				default:
+				}
+			}
 		}
 	}
 }

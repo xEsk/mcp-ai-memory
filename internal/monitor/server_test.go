@@ -61,10 +61,44 @@ func TestMonitorUIRendersDroppedEventHealth(t *testing.T) {
 	server.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	body := response.Body.String()
-	for _, expected := range []string{"event.dropped_events", "live · dropped "} {
+	for _, expected := range []string{"event.dropped_events", "droppedBySession", "reduce((total, value) => total + value", "live · dropped "} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("monitor UI does not contain %q", expected)
 		}
+	}
+}
+
+func TestServerPrioritizesHealthEventForFullSubscriber(t *testing.T) {
+	server := NewServer(10)
+	subscriber := make(chan trace.Event, 1)
+	server.addSubscriber(subscriber)
+	defer server.removeSubscriber(subscriber)
+	subscriber <- trace.Event{Tool: "stale", Phase: trace.PhaseRequest}
+
+	health := trace.Event{SessionID: "session-1", Tool: "trace.queue", Phase: trace.PhaseHealth, DroppedEvents: 2}
+	server.appendEvent(health)
+
+	got := <-subscriber
+	if got.Phase != trace.PhaseHealth || got.DroppedEvents != 2 {
+		t.Fatalf("subscriber event = %#v, want health event", got)
+	}
+}
+
+func TestServerConcurrentAppendAndSubscriberRemoval(t *testing.T) {
+	server := NewServer(10)
+	for range 100 {
+		subscriber := make(chan trace.Event, 1)
+		server.addSubscriber(subscriber)
+		started := make(chan struct{})
+		done := make(chan struct{})
+		go func() {
+			close(started)
+			server.appendEvent(trace.Event{Tool: "memory.search", Phase: trace.PhaseRequest})
+			close(done)
+		}()
+		<-started
+		server.removeSubscriber(subscriber)
+		<-done
 	}
 }
 
