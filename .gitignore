@@ -1,6 +1,8 @@
 /.env
 /data/*.db
 /data/*.db-*
+/data/*.db.manifest
+/data/*.lock
 /memory-mcp
 /dist/
 .idea

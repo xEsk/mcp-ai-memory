@@ -48,7 +48,7 @@ New features should extend existing package boundaries before introducing new la
 
 ## Current Plans
 
-- [Memory Trust Roadmap](../plans/2026-07-14-001-memory-trust-roadmap/README.md): three ordered specifications covering P0 correctness/privacy, P1 continuity/operability/evidence, and P2 retrieval quality/debuggability. Phase 1 is accepted at commit `039f7c236096d94dfb6154cb0a4256b727afa9dd`; Phase 2 construction is integrated into `main`, while the separately authorized C1/C2/C3 real-store operations remain pending.
+- [Memory Trust Roadmap](../plans/2026-07-14-001-memory-trust-roadmap/README.md): three ordered specifications covering P0 correctness/privacy, P1 continuity/operability/evidence, and P2 retrieval quality/debuggability. Phases 1 and 2 are accepted; the authorised Phase 3 retrieval-quality work is active.
 
 ## Choose Documentation By Task
 

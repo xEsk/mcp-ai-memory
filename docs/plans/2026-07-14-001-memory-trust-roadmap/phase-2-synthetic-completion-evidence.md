@@ -4,7 +4,7 @@
 
 This evidence covers Phase 2 construction and synthetic verification only. No command opened, copied, classified, migrated, backed up, restored, or rebuilt `data/memory.db`. Every database fixture uses a newly created path beneath `t.TempDir()`.
 
-The real-store C1/C2/C3 gates remain deliberately pending separate operator authorization:
+The real-store C1/C2/C3 gates were deliberately excluded from construction and later completed through separate operator authorisations:
 
 1. C1 permits only read-only classification.
 2. C2 permits an offline validated snapshot after C1 acceptance.
@@ -51,3 +51,9 @@ The August 2026 follow-up removed the remaining incidental-write path from offli
 Enabled tracing now has explicit application lifecycle ownership. Graceful shutdown closes the asynchronous sink exactly once, drains accepted events, and emits a payload-free `trace.queue` health event when queue pressure caused drops. The monitor prioritises health delivery to slow subscribers and renders the sum of per-session cumulative counts, while the metadata privacy allowlist includes only the numeric `dropped_events` addition.
 
 The repository now uses `.github/workflows/verify.yml` and the same `make verify` entry point locally. The verification target tests the real-store guard, structurally traces test database paths through temporary variables or a temporary working directory and rejects package-level paths, runs the full guarded race suite, builds all three commands, checks Go formatting and diff whitespace, lists temporary test-database fixtures, and rejects any test source that names `data/memory.db`. The complete target exited zero after these corrections and reported `real database filesystem metadata unchanged`.
+
+## Authorised real-store acceptance
+
+On 2026-08-24 the operator explicitly authorised C1, C2, and C3. C1 classified the configured store read-only as `current unversioned v1`. C2 ran offline and created a same-directory snapshot whose manifest, SHA-256, and SQLite integrity validation passed. C3 reclassified under runtime locking, created the mandatory immediate pre-adoption snapshot, and transactionally added only the canonical v1 `schema_migrations` ledger entry. Post-operation read-only classification returned `current versioned v1`.
+
+No memory, enrichment, or FTS row migration was required. Both validated snapshots remain operator-controlled recovery artifacts and are ignored by Git. Phase 2 was accepted after the guarded synthetic suite and independent critical review remained green.
