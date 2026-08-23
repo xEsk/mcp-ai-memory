@@ -124,7 +124,7 @@ func (s *Server) handleMemorySearch(ctx context.Context, request mcp.CallToolReq
 	}
 	results, err := s.search.Search(ctx, p.ID, p.Key, search.Input(input))
 	if err != nil {
-		if errors.Is(err, search.ErrInvalidMode) {
+		if errors.Is(err, search.ErrInvalidMode) || errors.Is(err, search.ErrInvalidQuery) {
 			return toolError("%v", err), nil
 		}
 		return nil, err
@@ -152,7 +152,7 @@ func (s *Server) handleMemorySearchCount(ctx context.Context, request mcp.CallTo
 		Tags:    input.Tags,
 	})
 	if err != nil {
-		if errors.Is(err, search.ErrInvalidMode) {
+		if errors.Is(err, search.ErrInvalidMode) || errors.Is(err, search.ErrInvalidQuery) {
 			return toolError("%v", err), nil
 		}
 		return nil, err
@@ -186,7 +186,7 @@ func (s *Server) handleMemorySearchDebug(ctx context.Context, request mcp.CallTo
 		Tags:    input.Tags,
 	})
 	if err != nil {
-		if errors.Is(err, search.ErrInvalidMode) {
+		if errors.Is(err, search.ErrInvalidMode) || errors.Is(err, search.ErrInvalidQuery) {
 			return toolError("%v", err), nil
 		}
 		return nil, err

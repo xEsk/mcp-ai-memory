@@ -153,16 +153,16 @@ type searchFilter struct {
 	Where string
 	Args  []any
 	Mode  string
+	Query CompiledQuery
 }
 
 func buildFilter(projectID, projectKey string, input Input) (searchFilter, error) {
-	mode, err := normalizeMode(input.Mode)
+	compiled, err := CompileQuery(input.Query, input.Mode)
 	if err != nil {
 		return searchFilter{}, err
 	}
-	match := buildFTSQuery(input.Query, mode)
 	where := "memory_fts MATCH ? AND memory_fts.project_key = ? AND m.project_id = ? AND m.deleted_at IS NULL"
-	args := []any{match, projectKey, projectID}
+	args := []any{compiled.Expression, projectKey, projectID}
 	if len(input.Types) > 0 {
 		where += " AND m.type IN (" + placeholders(len(input.Types)) + ")"
 		for _, t := range input.Types {
@@ -173,7 +173,7 @@ func buildFilter(projectID, projectKey string, input Input) (searchFilter, error
 		where += " AND COALESCE(e.tags_json, '[]') LIKE ?"
 		args = append(args, "%"+tag+"%")
 	}
-	return searchFilter{Where: where, Args: args, Mode: mode}, nil
+	return searchFilter{Where: where, Args: args, Mode: compiled.Mode, Query: compiled}, nil
 }
 
 func normalizeMode(mode string) (string, error) {
@@ -187,47 +187,6 @@ func normalizeMode(mode string) (string, error) {
 	default:
 		return "", fmt.Errorf("%w: %q", ErrInvalidMode, mode)
 	}
-}
-
-func buildFTSQuery(query, mode string) string {
-	parts := strings.Fields(query)
-	var terms []string
-	for _, part := range parts {
-		part = cleanTerm(part)
-		if part == "" || shouldSkipTerm(part, mode) {
-			continue
-		}
-		terms = append(terms, quotePrefixTerm(part))
-	}
-	if len(terms) == 0 {
-		return `""`
-	}
-	if mode == ModePrecise {
-		return strings.Join(terms, " AND ")
-	}
-	return strings.Join(terms, " OR ")
-}
-
-func cleanTerm(term string) string {
-	term = strings.Trim(term, `"*'.,;:()[]{}?¿!¡`)
-	return strings.ToLower(term)
-}
-
-func shouldSkipTerm(term, mode string) bool {
-	if len(term) < 2 {
-		return true
-	}
-	if mode == ModeBroad {
-		return false
-	}
-	if len(term) < 3 {
-		return true
-	}
-	return searchStopWords[term]
-}
-
-func quotePrefixTerm(term string) string {
-	return `"` + strings.ReplaceAll(term, `"`, `""`) + `"*`
 }
 
 func placeholders(count int) string {
