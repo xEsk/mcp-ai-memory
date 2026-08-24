@@ -167,6 +167,45 @@ func TestMemorySuggestBroadensWeakPreciseCandidatesAndRecordsFinalSetOnce(t *tes
 	}
 }
 
+func TestMemorySuggestUsesShortTechnicalAndDiacriticFoldedEvidence(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		title   string
+		content string
+		input   string
+	}{
+		{name: "short technical", title: "Go DB io boundary", content: "Go DB io boundary rules for adapters", input: "Go DB io boundary rules"},
+		{name: "diacritic fold", title: "München deploy pipeline", content: "München deploy pipeline durable convention", input: "Munchen deploy pipeline durable convention"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, server, projects, memories := newSuggestTestServer(t)
+			if _, err := projects.Upsert(ctx, project.UpsertInput{Key: "api", Name: "API"}); err != nil {
+				t.Fatalf("upsert project: %v", err)
+			}
+			stored, err := memories.Upsert(ctx, memory.UpsertInput{
+				Project: "api", Type: memory.TypeImplementation, Title: test.title,
+				Content: test.content, Importance: 4, Enrich: true,
+			})
+			if err != nil {
+				t.Fatalf("upsert memory: %v", err)
+			}
+			result, err := server.handleMemorySuggest(ctx, mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: map[string]any{
+				"project": "api", "input": test.input,
+			}}})
+			if err != nil {
+				t.Fatalf("suggest memory: %v", err)
+			}
+			content, ok := result.StructuredContent.(map[string]any)
+			if !ok {
+				t.Fatalf("structured content type = %T", result.StructuredContent)
+			}
+			if content["search_mode"] != search.ModePrecise || content["recommended_candidate_id"] != stored.ID {
+				t.Fatalf("suggestion = mode %q candidate %q, want precise candidate %q", content["search_mode"], content["recommended_candidate_id"], stored.ID)
+			}
+		})
+	}
+}
+
 func TestMemorySuggestWeakBalancedMatchDoesNotRecommendUpdate(t *testing.T) {
 	ctx, server, projects, memories := newSuggestTestServer(t)
 

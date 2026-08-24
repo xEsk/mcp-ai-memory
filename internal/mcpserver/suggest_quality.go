@@ -175,10 +175,10 @@ func candidateMetadataText(m memory.Memory) string {
 func importantTerms(text string) map[string]bool {
 	terms := map[string]bool{}
 	for _, token := range retrievaltext.Tokenize(text) {
-		if token.RuneCount < 3 || suggestStopWords[token.Text] {
+		if suggestStopWords[token.Identity] {
 			continue
 		}
-		terms[token.Text] = true
+		terms[token.Identity] = true
 	}
 	return terms
 }
@@ -186,7 +186,7 @@ func importantTerms(text string) map[string]bool {
 func compiledSuggestTerms(query search.CompiledQuery) map[string]bool {
 	terms := make(map[string]bool, len(query.Terms))
 	for _, term := range query.Terms {
-		terms[term.Text] = true
+		terms[term.Identity] = true
 	}
 	return terms
 }

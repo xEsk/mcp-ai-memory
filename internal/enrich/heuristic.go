@@ -64,20 +64,29 @@ func lastRuneIndexAny(runes []rune, chars string) int {
 }
 
 func topTokens(text string, limit int) []string {
-	counts := map[string]int{}
+	type tokenCount struct {
+		text  string
+		count int
+	}
+	counts := map[string]tokenCount{}
 	for _, token := range retrievaltext.TokenizeAll(text) {
-		if stopWords[token.Text] || (token.RuneCount < 3 && !shortTechnicalTokens[token.Text]) {
+		if stopWords[token.Identity] || (token.RuneCount < 3 && !shortTechnicalTokens[token.Identity]) {
 			continue
 		}
-		counts[token.Text]++
+		current := counts[token.Identity]
+		if current.text == "" {
+			current.text = token.Text
+		}
+		current.count++
+		counts[token.Identity] = current
 	}
 	type pair struct {
 		token string
 		count int
 	}
 	pairs := make([]pair, 0, len(counts))
-	for token, count := range counts {
-		pairs = append(pairs, pair{token: token, count: count})
+	for _, count := range counts {
+		pairs = append(pairs, pair{token: count.text, count: count.count})
 	}
 	sort.Slice(pairs, func(i, j int) bool {
 		if pairs[i].count == pairs[j].count {
@@ -99,7 +108,7 @@ func technicalEntities(text string, limit int) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, candidate := range technicalCandidates(text) {
-		identity := strings.ToLower(candidate)
+		identity := retrievaltext.FoldIdentity(candidate)
 		if seen[identity] || (!strings.ContainsAny(candidate, "./:_-") && !hasUpper(candidate)) {
 			continue
 		}
@@ -200,7 +209,7 @@ func normalizedTokenTexts(text string) []string {
 	tokens := retrievaltext.TokenizeAll(text)
 	out := make([]string, 0, len(tokens))
 	for _, token := range tokens {
-		out = append(out, token.Text)
+		out = append(out, token.Identity)
 	}
 	return out
 }
@@ -256,7 +265,7 @@ func mergeUniqueLimit(limit int, values ...string) []string {
 	var out []string
 	for _, value := range values {
 		value = strings.TrimSpace(value)
-		identity := strings.ToLower(value)
+		identity := retrievaltext.FoldIdentity(value)
 		if value == "" || seen[identity] {
 			continue
 		}

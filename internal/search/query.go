@@ -12,8 +12,9 @@ var ErrInvalidQuery = errors.New("invalid search query")
 
 // QueryTerm describes one normalized exact or prefix FTS term.
 type QueryTerm struct {
-	Text  string
-	Exact bool
+	Text     string
+	Identity string
+	Exact    bool
 }
 
 // CompiledQuery contains the escaped FTS expression and its normalized terms.
@@ -31,10 +32,10 @@ func CompileQuery(query, mode string) (CompiledQuery, error) {
 	}
 	var terms []QueryTerm
 	for _, token := range retrievaltext.Tokenize(query) {
-		if normalizedMode != ModeBroad && token.RuneCount >= 3 && searchStopWords[token.Text] {
+		if normalizedMode != ModeBroad && token.RuneCount >= 3 && searchStopWords[token.Identity] {
 			continue
 		}
-		terms = append(terms, QueryTerm{Text: token.Text, Exact: token.RuneCount <= 2})
+		terms = append(terms, QueryTerm{Text: token.Text, Identity: token.Identity, Exact: token.RuneCount <= 2})
 	}
 	if len(terms) == 0 {
 		return CompiledQuery{}, fmt.Errorf("%w: no searchable terms", ErrInvalidQuery)

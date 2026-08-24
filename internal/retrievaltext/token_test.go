@@ -11,7 +11,7 @@ func TestTokenizeUnicodeTechnicalText(t *testing.T) {
 	for _, token := range tokens {
 		got = append(got, token.Text)
 	}
-	want := []string{"münchen", "mu\u0308nchen", "io", "reader", "context", "memory", "fts", "x", "request", "id", "c", "db", "x509"}
+	want := []string{"münchen", "io", "reader", "context", "memory", "fts", "x", "request", "id", "c", "db", "x509"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("tokens = %v, want %v", got, want)
 	}
@@ -33,5 +33,17 @@ func TestTokenizeAllPreservesSourceOrderAndRepetitions(t *testing.T) {
 	want := []string{"api", "api", "route"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("tokens = %v, want %v", got, want)
+	}
+}
+
+func TestTokenIdentityFoldsUnicode61LatinDiacriticsAndCanonicalForms(t *testing.T) {
+	tokens := Tokenize("München Mu\u0308nchen Munchen configuració configuracio")
+	var got []string
+	for _, token := range tokens {
+		got = append(got, token.Identity)
+	}
+	want := []string{"munchen", "configuracio"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("identities = %v, want %v", got, want)
 	}
 }
