@@ -322,20 +322,20 @@ Update active English documentation:
 
 ## 12. Completion checklist and proof
 
-- [ ] Shared Unicode-aware technical token tests pass.
-- [ ] Search and count use one compiler and return the same typed empty-query error.
-- [ ] Reviewed short technical terms are exact and retrievable; long prefix compatibility remains.
-- [ ] FTS syntax injection tests pass and project leakage remains zero.
-- [ ] Heuristic Unicode, UTF-8, deterministic-order, hard-negative, alias, and phrase-cap tests pass.
-- [ ] Existing stored enrichment is untouched.
-- [ ] Precise-safe suggestion avoids balanced; precise-weak/ambiguous evaluates balanced conservatively.
-- [ ] Candidate IDs are deduplicated and retrieval counts increment once per public candidate.
-- [ ] Internal content helps evidence where approved but never leaks through candidate DTOs.
-- [ ] Debug reports correct matched fields and highlighted snippet for every indexed field.
-- [ ] Phase 2 aggregate/slice gates pass without relaxed thresholds.
-- [ ] Full race-enabled tests and required binaries build.
-- [ ] Active docs and Project Memory match implemented behavior.
-- [ ] The guard reports the real database and sidecars unchanged, and source inspection proves explicit temporary test paths with no protected-path reference.
+- [x] Shared Unicode-aware technical token tests pass.
+- [x] Search and count use one compiler and return the same typed empty-query error.
+- [x] Reviewed short technical terms are exact and retrievable; long prefix compatibility remains.
+- [x] FTS syntax injection tests pass and project leakage remains zero.
+- [x] Heuristic Unicode, UTF-8, deterministic-order, hard-negative, alias, and phrase-cap tests pass.
+- [x] Existing stored enrichment is untouched.
+- [x] Precise-safe suggestion avoids balanced; precise-weak/ambiguous evaluates balanced conservatively.
+- [x] Candidate IDs are deduplicated and retrieval counts increment once per public candidate.
+- [x] Internal content helps evidence where approved but never leaks through candidate DTOs.
+- [x] Debug reports correct matched fields and highlighted snippet for every indexed field.
+- [x] Phase 2 aggregate/slice gates pass without relaxed thresholds.
+- [x] Full race-enabled tests and required binaries build.
+- [x] Active docs and Project Memory match implemented behavior.
+- [x] The guard reports the real database and sidecars unchanged, and source inspection proves explicit temporary test paths with no protected-path reference.
 
 Completion proof contains pre-fix RED outputs, post-fix focal GREEN outputs, before/after quality reports, project-leakage and suggestion-precision results, DTO sentinel checks, exact debug attribution fixtures, the final verification output, and temporary fixture paths.
 

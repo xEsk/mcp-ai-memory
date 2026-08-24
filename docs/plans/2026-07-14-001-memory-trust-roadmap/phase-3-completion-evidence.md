@@ -58,4 +58,4 @@ go build -o dist/memory-monitor ./cmd/memory-monitor
 go build -o dist/memory-maintenance ./cmd/memory-maintenance
 ```
 
-Independent CRITICAL review is the final acceptance gate. Its result is recorded in the roadmap status when resolved.
+Independent CRITICAL review challenged short-token suggestion evidence, exact `unicode61` folding/boundaries, and forged debug-highlight sentinels. The implementation added focused regressions and exact temporary-SQLite parity coverage for each finding. Checkpoint D cleared at `af80daa` with no remaining actionable discrepancies; graph coverage matched HEAD with no recorded gaps in the reviewed files.

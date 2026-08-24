@@ -48,7 +48,7 @@ New features should extend existing package boundaries before introducing new la
 
 ## Current Plans
 
-- [Memory Trust Roadmap](../plans/2026-07-14-001-memory-trust-roadmap/README.md): three ordered specifications covering P0 correctness/privacy, P1 continuity/operability/evidence, and P2 retrieval quality/debuggability. Phases 1 and 2 are accepted; Phase 3 implementation is complete and awaiting final verification and review.
+- [Memory Trust Roadmap](../plans/2026-07-14-001-memory-trust-roadmap/README.md): three accepted phases covering P0 correctness/privacy, P1 continuity/operability/evidence, and P2 retrieval quality/debuggability. The roadmap completed guarded verification and independent CRITICAL review on 2026-08-24.
 
 ## Choose Documentation By Task
 

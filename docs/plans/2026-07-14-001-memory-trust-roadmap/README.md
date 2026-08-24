@@ -8,7 +8,7 @@ The design baseline is repository `mcp-ai-memory` at commit `f56c19430c986cd9c75
 
 ## Current status
 
-Phase 1 was accepted on 2026-07-14 at implementation baseline `039f7c236096d94dfb6154cb0a4256b727afa9dd`. Its auditable closeout is recorded in [Phase 1 completion evidence](phase-1-completion-evidence.md). Phase 2 was accepted on 2026-08-24 after its [synthetic completion evidence](phase-2-synthetic-completion-evidence.md), independent critical review, and the separately authorised real-store C1/C2/C3 sequence all passed. Phase 3 is authorised and active on the reliability/retrieval completion branch.
+Phase 1 was accepted on 2026-07-14 at implementation baseline `039f7c236096d94dfb6154cb0a4256b727afa9dd`. Its auditable closeout is recorded in [Phase 1 completion evidence](phase-1-completion-evidence.md). Phase 2 was accepted on 2026-08-24 after its [synthetic completion evidence](phase-2-synthetic-completion-evidence.md), independent critical review, and the separately authorised real-store C1/C2/C3 sequence all passed. Phase 3 was accepted on 2026-08-24 after its [completion evidence](phase-3-completion-evidence.md), guarded race suite, unchanged real-store metadata proof, and independent CRITICAL Checkpoint D review all passed. The three-phase roadmap is complete.
 
 ## Execution order
 
@@ -57,4 +57,4 @@ Roadmap entry requires approved specifications, confirmation of the execution ba
 
 A phase exits only when its documented acceptance criteria are met, focal and full scoped verification pass, operational documentation and durable project knowledge match the implementation, automated verification leaves the real database untouched, and review accepts the completion proof. Any separately authorized Phase 2 C1/C2/C3 operation is reported as an explicit operational event, never hidden inside completion tests. The roadmap exits only after all three phases are accepted, recovery has been rehearsed, the quality gates pass, and runtime behavior, documentation, and Project Memory agree.
 
-Phases 1 and 2 have completed the `implement-project-phase` workflow and are accepted. Phase 3 has an explicit implementation authorisation and must preserve the accepted Phase 2 corpus, thresholds, recovery guarantees, and real-data isolation rules.
+All three phases have completed the `implement-project-phase` workflow and are accepted. Future retrieval changes must preserve the accepted corpus thresholds, recovery guarantees, real-data isolation, and evidence-backed query/suggestion/debug contracts unless a separately approved plan changes them.
