@@ -43,6 +43,7 @@
     {"id": "short-db", "project": "atlas-api", "text": "DB", "mode": "precise", "slice": "short_technical", "critical": true, "judgments": [{"memory_id": "api-short-db", "grade": 3}]},
     {"id": "short-io", "project": "atlas-api", "text": "io", "mode": "precise", "slice": "short_technical", "critical": true, "judgments": [{"memory_id": "api-short-io", "grade": 3}, {"memory_id": "api-iostream-distractor", "grade": 0}]},
     {"id": "unicode-munich", "project": "atlas-api", "text": "München", "mode": "precise", "slice": "unicode", "critical": true, "judgments": [{"memory_id": "api-munich-unicode", "grade": 3}]},
+    {"id": "unicode-munich-folded", "project": "atlas-api", "text": "Munchen", "mode": "precise", "slice": "unicode", "critical": true, "judgments": [{"memory_id": "api-munich-unicode", "grade": 3}]},
     {"id": "negative-build-source", "project": "negative-build", "text": "build", "mode": "precise", "slice": "heuristic_hard_negative", "critical": true, "judgments": [{"memory_id": "negative-build-memory", "grade": 3}]},
     {"id": "negative-build-ui", "project": "negative-build", "text": "frontend", "mode": "precise", "slice": "heuristic_hard_negative", "critical": true, "no_match": true},
     {"id": "negative-contest-test", "project": "negative-contest", "text": "workflow", "mode": "precise", "slice": "heuristic_hard_negative", "critical": true, "no_match": true},

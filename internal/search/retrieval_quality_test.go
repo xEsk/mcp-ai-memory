@@ -513,6 +513,13 @@ func assertQualityGate(t *testing.T, corpus qualityCorpus, global qualitySummary
 	if identifier.HitAt1 != 1 {
 		t.Errorf("identifier/path Hit@1 = %.2f, want 1.00", identifier.HitAt1)
 	}
+	shortTechnical := bySlice["short_technical"]
+	if shortTechnical.HitAt1 != 1 {
+		t.Errorf("short-technical Hit@1 = %.2f, want 1.00", shortTechnical.HitAt1)
+	}
+	if hardNegative := bySlice["heuristic_hard_negative"]; hardNegative.FalsePositives != 0 {
+		t.Errorf("heuristic hard-negative false positives = %d, want 0", hardNegative.FalsePositives)
+	}
 	for slice, score := range bySlice {
 		if slice == "no_match" {
 			continue
