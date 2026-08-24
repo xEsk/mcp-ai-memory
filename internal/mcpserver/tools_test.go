@@ -174,7 +174,7 @@ func TestMemorySuggestUsesShortTechnicalAndDiacriticFoldedEvidence(t *testing.T)
 		content string
 		input   string
 	}{
-		{name: "short technical", title: "Go DB io boundary", content: "Go DB io boundary rules for adapters", input: "Go DB io boundary rules"},
+		{name: "short technical", title: "Go DB io C R", content: "Go DB io C R", input: "Go DB io C R"},
 		{name: "diacritic fold", title: "München deploy pipeline", content: "München deploy pipeline durable convention", input: "Munchen deploy pipeline durable convention"},
 		{name: "canonical fold", title: "München deploy pipeline", content: "München deploy pipeline durable convention", input: "Mu\u0308nchen deploy pipeline durable convention"},
 	} {
