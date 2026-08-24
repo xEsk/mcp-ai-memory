@@ -111,6 +111,14 @@ func TestLocalHeuristicEnricherHardNegativeSubstrings(t *testing.T) {
 	}
 }
 
+func TestTechnicalEntitiesPreserveDotfilesAndPaths(t *testing.T) {
+	got := technicalEntities("load .env before internal/search/fts.go.", 10)
+	want := []string{".env", "internal/search/fts.go"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("technical entities = %v, want %v", got, want)
+	}
+}
+
 func TestLocalHeuristicEnricherUsesRuneSafeSummaryAndHardPhraseCap(t *testing.T) {
 	content := "München alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima november oscar papa quebec romeo sierra tango "
 	for i := 0; i < 100; i++ {

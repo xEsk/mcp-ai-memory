@@ -116,7 +116,8 @@ func technicalCandidates(text string) []string {
 	var out []string
 	var current []rune
 	flush := func() {
-		candidate := strings.Trim(string(current), `.,;()[]{}!?¿¡"'`)
+		candidate := strings.Trim(string(current), `,;()[]{}!?¿¡"'`)
+		candidate = strings.TrimRight(candidate, ".")
 		current = current[:0]
 		if candidate != "" {
 			out = append(out, candidate)
