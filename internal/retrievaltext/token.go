@@ -58,10 +58,16 @@ func TokenizeAll(text string) []Token {
 // FoldIdentity returns a lowercase diacritic-folded identity for token comparison.
 func FoldIdentity(text string) string {
 	var folded strings.Builder
+	var base rune
 	for _, r := range strings.ToLower(text) {
 		if unicode.IsMark(r) {
+			if unicode.In(base, unicode.Latin, unicode.Greek) {
+				continue
+			}
+			folded.WriteRune(r)
 			continue
 		}
+		base = r
 		if replacement, ok := latinDiacriticFold[r]; ok {
 			r = replacement
 		}

@@ -47,10 +47,14 @@ func TestFoldIdentityUnicode61ReviewedMatrix(t *testing.T) {
 	}{
 		{stored: "München", query: "Munchen", match: true},
 		{stored: "Mu\u0308nchen", query: "Munchen", match: true},
+		{stored: "ά", query: "α", match: false},
+		{stored: "α\u0301", query: "α", match: true},
 		{stored: "București", query: "bucuresti", match: true},
 		{stored: "ơ", query: "o", match: true},
 		{stored: "ł", query: "l", match: false},
 		{stored: "đ", query: "d", match: false},
+		{stored: "שָׁלוֹם", query: "שלום", match: false},
+		{stored: "नमस्ते", query: "नमसत", match: false},
 	} {
 		if _, err := db.ExecContext(ctx, `DELETE FROM probe`); err != nil {
 			t.Fatalf("clear probe: %v", err)
