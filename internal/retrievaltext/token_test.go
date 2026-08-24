@@ -47,3 +47,15 @@ func TestTokenIdentityFoldsUnicode61LatinDiacriticsAndCanonicalForms(t *testing.
 		t.Fatalf("identities = %v, want %v", got, want)
 	}
 }
+
+func TestTokenizeUsesUnicode61NonFoldedMarkBoundaries(t *testing.T) {
+	tokens := TokenizeAll("שָׁלוֹם नमस्ते")
+	var got []string
+	for _, token := range tokens {
+		got = append(got, token.Identity)
+	}
+	want := []string{"ש", "לו", "ם", "नमस", "त"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("identities = %v, want %v", got, want)
+	}
+}

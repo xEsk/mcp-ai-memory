@@ -45,7 +45,14 @@ func TokenizeAll(text string) []Token {
 		tokens = append(tokens, Token{Text: normalized, Identity: identity, Original: original, RuneCount: utf8.RuneCountInString(normalized)})
 	}
 	for _, r := range text {
-		if unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.IsMark(r) {
+		if unicode.IsMark(r) {
+			if unicode61RemovedMarks[r] {
+				continue
+			}
+			flush()
+			continue
+		}
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
 			current = append(current, r)
 			continue
 		}
@@ -58,22 +65,28 @@ func TokenizeAll(text string) []Token {
 // FoldIdentity returns a lowercase diacritic-folded identity for token comparison.
 func FoldIdentity(text string) string {
 	var folded strings.Builder
-	var base rune
 	for _, r := range strings.ToLower(text) {
 		if unicode.IsMark(r) {
-			if unicode.In(base, unicode.Latin, unicode.Greek) {
+			if unicode61RemovedMarks[r] {
 				continue
 			}
 			folded.WriteRune(r)
 			continue
 		}
-		base = r
 		if replacement, ok := latinDiacriticFold[r]; ok {
 			r = replacement
 		}
 		folded.WriteRune(r)
 	}
 	return folded.String()
+}
+
+var unicode61RemovedMarks = map[rune]bool{
+	0x0300: true, 0x0301: true, 0x0302: true, 0x0303: true, 0x0304: true,
+	0x0306: true, 0x0307: true, 0x0308: true, 0x0309: true, 0x030a: true,
+	0x030b: true, 0x030c: true, 0x030f: true, 0x0311: true, 0x031b: true,
+	0x0323: true, 0x0324: true, 0x0325: true, 0x0326: true, 0x0327: true,
+	0x0328: true, 0x032d: true, 0x032e: true, 0x0330: true, 0x0331: true,
 }
 
 var latinDiacriticFold = map[rune]rune{

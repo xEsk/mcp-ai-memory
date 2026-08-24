@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"testing"
 	"unicode"
 
@@ -75,6 +77,51 @@ func TestFoldIdentityUnicode61ReviewedMatrix(t *testing.T) {
 	}
 }
 
+func TestTokenizeMatchesUnicode61CombiningMarkBoundaries(t *testing.T) {
+	db := openUnicode61ParityDB(t)
+	ctx := context.Background()
+	for _, letters := range [][2]rune{{'a', 'b'}, {'α', 'β'}, {'а', 'б'}, {'ש', 'ל'}, {'न', 'म'}} {
+		for _, bounds := range [][2]rune{{0x0300, 0x036f}, {0x0591, 0x05c7}, {0x0900, 0x097f}} {
+			for mark := bounds[0]; mark <= bounds[1]; mark++ {
+				if !unicode.IsMark(mark) {
+					continue
+				}
+				stored := string([]rune{letters[0], mark, letters[1]})
+				if _, err := db.ExecContext(ctx, `DELETE FROM probe`); err != nil {
+					t.Fatalf("clear probe: %v", err)
+				}
+				if _, err := db.ExecContext(ctx, `INSERT INTO probe(value) VALUES (?)`, stored); err != nil {
+					t.Fatalf("insert %U+%U+%U: %v", letters[0], mark, letters[1], err)
+				}
+				rows, err := db.QueryContext(ctx, `SELECT term FROM probe_vocab ORDER BY term`)
+				if err != nil {
+					t.Fatalf("read vocab %U+%U+%U: %v", letters[0], mark, letters[1], err)
+				}
+				var want []string
+				for rows.Next() {
+					var term string
+					if err := rows.Scan(&term); err != nil {
+						rows.Close()
+						t.Fatalf("scan vocab: %v", err)
+					}
+					want = append(want, term)
+				}
+				if err := rows.Close(); err != nil {
+					t.Fatalf("close vocab rows: %v", err)
+				}
+				var got []string
+				for _, token := range TokenizeAll(stored) {
+					got = append(got, token.Identity)
+				}
+				sort.Strings(got)
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("tokens for %U+%U+%U = %q, unicode61 vocab = %q", letters[0], mark, letters[1], got, want)
+				}
+			}
+		}
+	}
+}
+
 func openUnicode61ParityDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "unicode61.db"))
@@ -88,6 +135,9 @@ func openUnicode61ParityDB(t *testing.T) *sql.DB {
 	})
 	if _, err := db.Exec(`CREATE VIRTUAL TABLE probe USING fts5(value, tokenize='unicode61')`); err != nil {
 		t.Fatalf("create probe: %v", err)
+	}
+	if _, err := db.Exec(`CREATE VIRTUAL TABLE probe_vocab USING fts5vocab(probe, 'row')`); err != nil {
+		t.Fatalf("create probe vocab: %v", err)
 	}
 	return db
 }
