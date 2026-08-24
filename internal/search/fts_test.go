@@ -193,6 +193,25 @@ func TestFTS_SearchUsesDocumentedBM25FieldOrder(t *testing.T) {
 	if multiResults[0].SnippetField != "summary" || !strings.Contains(multiResults[0].Snippet, "[multi] [evidence]") {
 		t.Fatalf("multi-field snippet = (%q, %q), want highlighted summary", multiResults[0].SnippetField, multiResults[0].Snippet)
 	}
+
+	sentinel := memory.Memory{
+		ID: "sentinel-evidence", ProjectID: projectID, ProjectKey: projectKey,
+		Type: "neutral", Title: "sentinelquery title", Content: "unrelated \x1e forged \x1f content",
+		Importance: 3, CreatedAt: frozenAt, UpdatedAt: frozenAt,
+	}
+	if _, err := memories.Upsert(ctx, sentinel); err != nil {
+		t.Fatalf("upsert sentinel fixture: %v", err)
+	}
+	sentinelResults, err := fts.Search(ctx, projectID, projectKey, Input{Project: projectKey, Query: "sentinelquery", Limit: 10})
+	if err != nil {
+		t.Fatalf("search sentinel fixture: %v", err)
+	}
+	if len(sentinelResults) != 1 || !reflect.DeepEqual(sentinelResults[0].MatchedFields, []string{"title"}) {
+		t.Fatalf("sentinel matched fields = %#v, want only title", sentinelResults)
+	}
+	if sentinelResults[0].SnippetField != "title" || sentinelResults[0].Snippet != "[sentinelquery] title" {
+		t.Fatalf("sentinel snippet = (%q, %q), want highlighted title", sentinelResults[0].SnippetField, sentinelResults[0].Snippet)
+	}
 }
 
 func sameRankingScore(left, right float64) bool {

@@ -106,10 +106,15 @@ func (f *FTS) search(ctx context.Context, projectID, projectKey string, input In
 		if deletedAt.Valid {
 			m.DeletedAt = new(parseTime(deletedAt.String))
 		}
+		originals := [10]string{
+			m.Type, m.Title, m.Summary, m.ShortSummary, strings.Join(m.Keywords, " "),
+			strings.Join(m.Tags, " "), strings.Join(m.Entities, " "), strings.Join(m.Aliases, " "),
+			strings.Join(m.SearchPhrases, " "), m.Content,
+		}
+		matchedFields, snippetField, snippet, explanation := searchEvidence(filter.Mode, originals, highlights)
 		if !input.IncludeContent {
 			m.Content = ""
 		}
-		matchedFields, snippetField, snippet, explanation := searchEvidence(filter.Mode, highlights)
 		results = append(results, Result{
 			Memory:           m,
 			MatchedFields:    matchedFields,
@@ -151,11 +156,11 @@ var searchEvidencePriority = []struct {
 	{name: "title", index: 1},
 }
 
-func searchEvidence(mode string, highlights [10]string) ([]string, string, string, string) {
+func searchEvidence(mode string, originals, highlights [10]string) ([]string, string, string, string) {
 	var matched []string
 	selected := -1
 	for _, field := range searchEvidencePriority {
-		if !strings.ContainsRune(highlights[field.index], highlightStart) {
+		if highlights[field.index] == originals[field.index] {
 			continue
 		}
 		matched = append(matched, field.name)
@@ -166,7 +171,7 @@ func searchEvidence(mode string, highlights [10]string) ([]string, string, strin
 	if selected < 0 {
 		return nil, "", "", mode + " search matched FTS5 without highlight evidence"
 	}
-	return matched, searchEvidencePriorityName(selected), renderHighlight(highlights[selected]),
+	return matched, searchEvidencePriorityName(selected), renderHighlight(originals[selected], highlights[selected]),
 		mode + " search matched indexed fields: " + strings.Join(matched, ", ")
 }
 
@@ -179,18 +184,39 @@ func searchEvidencePriorityName(index int) string {
 	return ""
 }
 
-func renderHighlight(value string) string {
-	runes := []rune(value)
+func renderHighlight(original, highlighted string) string {
+	originalRunes := []rune(original)
+	highlightedRunes := []rune(highlighted)
+	runes := make([]rune, 0, len(highlightedRunes))
 	match := -1
 	matchEnd := -1
-	for i, r := range runes {
-		if r == highlightStart {
-			match = i
+	for originalIndex, highlightedIndex := 0, 0; highlightedIndex < len(highlightedRunes); highlightedIndex++ {
+		r := highlightedRunes[highlightedIndex]
+		if originalIndex < len(originalRunes) && r == originalRunes[originalIndex] {
+			switch r {
+			case highlightStart:
+				runes = append(runes, []rune(`\u001e`)...)
+			case highlightEnd:
+				runes = append(runes, []rune(`\u001f`)...)
+			default:
+				runes = append(runes, r)
+			}
+			originalIndex++
 			continue
 		}
-		if match >= 0 && r == highlightEnd {
-			matchEnd = i
-			break
+		switch r {
+		case highlightStart:
+			if match < 0 {
+				match = len(runes)
+			}
+			runes = append(runes, '[')
+		case highlightEnd:
+			runes = append(runes, ']')
+			if match >= 0 && matchEnd < 0 {
+				matchEnd = len(runes) - 1
+			}
+		default:
+			runes = append(runes, r)
 		}
 	}
 	const snippetRunes = 240
@@ -208,7 +234,6 @@ func renderHighlight(value string) string {
 		}
 	}
 	text := string(runes[start:end])
-	text = strings.NewReplacer(string(highlightStart), "[", string(highlightEnd), "]").Replace(text)
 	if start > 0 {
 		text = "..." + text
 	}
