@@ -79,7 +79,15 @@ Good memories are focused but self-contained. Avoid both extremes:
 - Too large: a project-wide summary mixes unrelated concepts, becomes stale in pieces, and creates noisy search results.
 - Preferred size: usually 100-400 words for one decision, workflow, subsystem, bug pattern, convention, domain concept, or API area.
 - Split when one memory contains unrelated facts or would need different `type`, `tags`, `importance`, or update cadence.
+- Keep a governing rule with the exceptions, recovery behavior, and gotchas needed to apply it correctly. Split only when the resulting memories have independent retrieval intent or update cadence and remain coherent on their own.
 - Merge or update when a new fact is really the same decision, workflow, bug, or convention as an existing memory.
+
+Maintain memories as current retrieval aids, not implementation history:
+
+- Title memories with the current domain concept and distinguishing technical identifiers. Put phase numbers, dates, branches, and commit IDs in `source` or supporting context unless they are themselves the durable subject.
+- After a clean cutover, superseding ADR, completed rollout, or renamed contract, search for memories that mention the replaced identifier, pending implementation, Stop Gate, or old status. Update or retire them in the same task when they would otherwise mislead future work.
+- Do not retain completion ledgers, benchmark totals, request counts, token or cost totals, or one-off proof statistics unless future operation depends on the exact value. Link the durable report instead.
+- Cite at least one currently resolvable canonical file, ADR, contract, schema, test, configuration path, or source symbol when one exists. A chat decision, branch name, or commit alone is insufficient after current authoritative documentation or code is available.
 
 Prefer this content shape:
 
