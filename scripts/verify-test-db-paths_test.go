@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -51,5 +52,46 @@ func TestProductionIdentifier(t *testing.T) { _, _ = storage.OpenSQLite(ctx, sto
 	}
 	if len(unsafePaths) != 8 {
 		t.Fatalf("unsafe paths = %v, want eight", unsafePaths)
+	}
+}
+
+func TestProjectMemorySkillProjectsOneToolResultRepresentation(t *testing.T) {
+	path := filepath.Join("..", "skills", "project-memory-mcp", "references", "tools.md")
+	sourceBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read Project Memory skill reference: %v", err)
+	}
+	source := string(sourceBytes)
+	exampleStart := strings.Index(source, "```javascript\n")
+	if exampleStart < 0 {
+		t.Fatal("Project Memory skill reference is missing executable JavaScript example")
+	}
+	exampleStart += len("```javascript\n")
+	exampleEnd := strings.Index(source[exampleStart:], "\n```")
+	if exampleEnd < 0 {
+		t.Fatal("Project Memory skill reference has an unterminated JavaScript example")
+	}
+	example := source[exampleStart : exampleStart+exampleEnd]
+
+	for _, forbidden := range []string{
+		"text(result)",
+		"text(JSON.stringify(result))",
+	} {
+		if strings.Contains(example, forbidden) {
+			t.Fatalf("Project Memory skill reference contains forbidden whole-result emission %q", forbidden)
+		}
+	}
+
+	for _, required := range []string{
+		"if (result.isError)",
+		"text(contentText ||",
+		"result.structuredContent !== undefined",
+		"result.structuredContent !== null",
+		"text(result.structuredContent);",
+		"text(contentText ?? \"\");",
+	} {
+		if !strings.Contains(example, required) {
+			t.Fatalf("Project Memory skill reference is missing result-projection guard %q", required)
+		}
 	}
 }

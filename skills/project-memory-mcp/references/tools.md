@@ -2,6 +2,41 @@
 
 Use namespace tools exposed by the configured MCP server, typically `mcp__project_memory`.
 
+## Selecting Tool Results For Model Context
+
+Project Memory returns both MCP representations for successful structured results: required `content` with a JSON `TextContent` fallback, and optional `structuredContent` for typed clients. Keeping both is intentional protocol compatibility, not an instruction to add both to model context.
+
+Direct Codex MCP calls project a result to one model value: non-null `structuredContent` takes precedence, otherwise Codex uses `content`. `functions.exec` is different: JavaScript receives the complete `CallToolResult`, and only values passed to `text()`, `image()`, or another output helper enter the parent model context.
+
+When using `functions.exec`:
+
+1. Never call `text(result)`, `text(JSON.stringify(result))`, or otherwise emit the complete wrapper.
+2. Check `isError` first and emit its text from `content`, so failures remain visible and actionable.
+3. For success, emit non-null `structuredContent` once. Fall back to joined text blocks from `content` when structured data is absent or null.
+
+This complete `functions.exec` body is executable after replacing the tool name and arguments:
+
+```javascript
+const result = await tools.mcp__project_memory__memory_search(input);
+const contentText = result.content
+  ?.filter(block => block.type === "text")
+  .map(block => block.text)
+  .join("\n");
+
+if (result.isError) {
+  text(contentText || "Project Memory tool failed without error text");
+  exit();
+}
+
+if (result.structuredContent !== undefined && result.structuredContent !== null) {
+  text(result.structuredContent);
+} else {
+  text(contentText ?? "");
+}
+```
+
+`text()` stringifies object values once, so the success path above contributes only the selected structured payload. Project Memory currently returns text-only blocks; if a future tool adds images, audio, or resources, forward those blocks with the matching output helper instead of flattening them into text.
+
 ## Canonical Project Key
 
 Before calling memory tools in a repository, read `AGENTS.md`. If it contains:

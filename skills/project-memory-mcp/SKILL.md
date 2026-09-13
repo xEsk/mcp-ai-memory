@@ -23,6 +23,7 @@ Use this skill to make project knowledge durable across sessions. The MCP is not
 - Use `memory.suggest` before writing when unsure whether new information should create, update, split, replace, or be ignored.
 - Use `memory.server.info` when you need to confirm the MCP server name and basic version currently loaded by the client.
 - Use `memory.search.debug` only for troubleshooting retrieval quality; normal memory use should rely on slim `memory.search` responses and `memory.get` for full content.
+- When Project Memory is called through `functions.exec`, never pass the complete `CallToolResult` to `text()` or serialize it equivalently. Select exactly one representation: emit error text from `content` when `isError` is true; otherwise prefer non-null `structuredContent` and fall back to text from `content`. Direct Codex MCP calls already perform this projection.
 
 ## Start-of-Task Workflow
 
