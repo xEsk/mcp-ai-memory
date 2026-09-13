@@ -14,7 +14,7 @@ import (
 
 const (
 	serverName    = "mcp-project-memory"
-	serverVersion = "0.1.0"
+	serverVersion = "0.2.0"
 )
 
 // Server exposes memory services as MCP tools.
