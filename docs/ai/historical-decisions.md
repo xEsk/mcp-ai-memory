@@ -38,6 +38,10 @@ Search is implemented with SQLite FTS5 over original and enriched fields. Embedd
 
 Retrieval normalization remains lexical and evidence-gated. Unicode technical tokens share one scanner; one- and two-rune terms are exact and longer terms retain prefix compatibility. SQLite `unicode61`, the FTS schema, BM25 weights, and the accepted quality thresholds remain unchanged.
 
+### Search cards before authoritative reads
+
+Normal `memory.search` results are compact candidate cards containing identity, bounded topic description, provenance, update time, and selected FTS match guidance. These fields help an agent decide which IDs to inspect but are not authoritative evidence and may reflect generated retrieval metadata. Agents must use `memory.get` before relying on a memory, unless full `content` was explicitly requested from search. This response-only projection does not change FTS matching or ranking.
+
 ### Prospective enrichment without historical guessing
 
 Local heuristic enrichment is deterministic, Unicode/rune safe, and based on reviewed exact token/phrase rules. The change applies to new or explicitly upserted memories only. Existing derived metadata is not rewritten because the schema has no reliable enricher kind/version provenance; a plain FTS rebuild cannot correct that limitation.

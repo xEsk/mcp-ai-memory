@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"strings"
 	"time"
 
 	"mcp-ai-memory/internal/memory"
@@ -19,6 +20,17 @@ type memoryOutput struct {
 	LastRetrievedAt *time.Time `json:"last_retrieved_at"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+type searchCardOutput struct {
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	Description  string    `json:"description"`
+	Source       string    `json:"source"`
+	UpdatedAt    time.Time `json:"updated_at"`
+	MatchExcerpt string    `json:"match_excerpt"`
+	MatchField   string    `json:"match_field"`
+	Content      string    `json:"content,omitempty"`
 }
 
 type searchDebugOutput struct {
@@ -65,12 +77,38 @@ func newMemoryOutputs(memories []memory.Memory, includeContent bool) []memoryOut
 	return out
 }
 
-func newSearchOutputs(results []search.Result, includeContent bool) []memoryOutput {
-	out := make([]memoryOutput, 0, len(results))
+func newSearchOutputs(results []search.Result, includeContent bool) []searchCardOutput {
+	out := make([]searchCardOutput, 0, len(results))
 	for _, result := range results {
-		out = append(out, newMemoryOutput(result.Memory, includeContent))
+		card := searchCardOutput{
+			ID:           result.Memory.ID,
+			Title:        result.Memory.Title,
+			Description:  searchDescription(result.Memory),
+			Source:       result.Memory.Source,
+			UpdatedAt:    result.Memory.UpdatedAt,
+			MatchExcerpt: result.Snippet,
+			MatchField:   result.SnippetField,
+		}
+		if includeContent {
+			card.Content = result.Memory.Content
+		}
+		out = append(out, card)
 	}
 	return out
+}
+
+func searchDescription(m memory.Memory) string {
+	description := strings.TrimSpace(m.ShortSummary)
+	if description == "" {
+		description = strings.TrimSpace(m.Content)
+	}
+	description = strings.Join(strings.Fields(description), " ")
+	const descriptionLimit = 160
+	runes := []rune(description)
+	if len(runes) <= descriptionLimit {
+		return description
+	}
+	return strings.TrimSpace(string(runes[:descriptionLimit-1])) + "…"
 }
 
 func newSearchDebugOutputs(results []search.Result) []searchDebugOutput {

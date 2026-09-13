@@ -34,7 +34,7 @@ Tracing must require explicit payload consent. Keep `off` as the default; `metad
 
 Memory read paths that return memories to clients should update exposure metrics. They show what the server returned, not whether a client used or valued a memory.
 
-Normal MCP responses should not leak internal retrieval machinery. Keep summaries, keywords, entities, aliases, search phrases, snippets, scores, and match explanations internal unless adding an explicit debug tool.
+Normal full-memory responses should not leak internal retrieval machinery. Compact search cards may expose only the bounded `description`, selected `match_excerpt`, and `match_field` needed for candidate selection. Keep raw summaries, keywords, entities, aliases, search phrases, scores, and match explanations internal unless using the explicit debug tool. Never present card guidance as authoritative memory content.
 
 ## Do Not Do Without Explicit Request
 

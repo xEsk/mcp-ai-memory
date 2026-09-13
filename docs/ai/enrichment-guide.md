@@ -28,6 +28,8 @@ It generates deterministic prospective metadata:
 
 The heuristic does not use arbitrary substring matches: for example, `build` does not imply `ui`, `contest` does not imply `test`, and `capitalization` does not imply `api`. Equal input produces equal ordered output.
 
+Normal `memory.search` cards project stored `short_summary` as `description`. Response shaping normalizes and caps it at 160 Unicode runes, and falls back deterministically to original content when stored metadata is empty. This is selection guidance only, not authoritative memory content. Search never calls an enrichment provider to produce the description.
+
 These corrections apply only when a memory is new or explicitly upserted. Existing enrichment is not automatically rewritten because stored rows do not record enough enricher provenance to distinguish local, provider-generated, and legacy metadata safely. Historical remediation requires a separately approved provenance and migration design; rebuilding FTS alone preserves the existing enrichment.
 
 ## OpenAI-Compatible Enrichment

@@ -17,6 +17,160 @@ import (
 	"mcp-ai-memory/internal/storage"
 )
 
+func TestMemorySearchCardsLeadToAuthoritativeGet(t *testing.T) {
+	ctx, server, projects, memories := newSuggestTestServer(t)
+	if _, err := projects.Upsert(ctx, project.UpsertInput{Key: "api", Name: "API"}); err != nil {
+		t.Fatalf("upsert project: %v", err)
+	}
+	stored, err := memories.Upsert(ctx, memory.UpsertInput{
+		Project: "api",
+		Type:    memory.TypeDecision,
+		Title:   "Invoice request contract",
+		Content: "Invoice clients must preserve the idempotency key on every request.",
+		Source:  "docs/invoices.md",
+		Enrich:  true,
+	})
+	if err != nil {
+		t.Fatalf("upsert memory: %v", err)
+	}
+
+	searchResult, err := server.handleMemorySearch(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Arguments: map[string]any{
+				"project": "api",
+				"query":   "invoice idempotency key",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("search memories: %v", err)
+	}
+	searchContent, ok := searchResult.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("search structured content type = %T", searchResult.StructuredContent)
+	}
+	cards, ok := searchContent["results"].([]searchCardOutput)
+	if !ok || len(cards) != 1 {
+		t.Fatalf("search cards = %#v", searchContent["results"])
+	}
+	if cards[0].ID != stored.ID || cards[0].Content != "" {
+		t.Fatalf("default search card = %#v", cards[0])
+	}
+	if cards[0].Description == "" || cards[0].MatchExcerpt == "" || cards[0].MatchField == "" {
+		t.Fatalf("search card lacks selection guidance: %#v", cards[0])
+	}
+
+	getResult, err := server.handleMemoryGet(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Arguments: map[string]any{
+				"project": "api",
+				"id":      cards[0].ID,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("get selected memory: %v", err)
+	}
+	got, ok := getResult.StructuredContent.(memoryOutput)
+	if !ok {
+		t.Fatalf("get structured content type = %T", getResult.StructuredContent)
+	}
+	if got.Content != stored.Content {
+		t.Fatalf("authoritative content = %q, want %q", got.Content, stored.Content)
+	}
+}
+
+func TestMemoryToolDescriptionsRequireAuthoritativeReadAfterSearch(t *testing.T) {
+	_, server, _, _ := newSuggestTestServer(t)
+	tests := []struct {
+		name     string
+		toolName string
+		phrases  []string
+	}{
+		{
+			name:     "search cards are guidance",
+			toolName: "memory.search",
+			phrases:  []string{"candidate cards", "not authoritative", "memory.get"},
+		},
+		{
+			name:     "get returns authoritative content",
+			toolName: "memory.get",
+			phrases:  []string{"authoritative full content", "memory.search card"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tool := server.mcp.GetTool(test.toolName)
+			if tool == nil {
+				t.Fatalf("tool %q is not registered", test.toolName)
+			}
+			for _, phrase := range test.phrases {
+				if !strings.Contains(tool.Tool.Description, phrase) {
+					t.Fatalf("tool %q description %q does not contain %q", test.toolName, tool.Tool.Description, phrase)
+				}
+			}
+		})
+	}
+}
+
+func TestMemoryEditRefreshesSearchCardMetadata(t *testing.T) {
+	ctx, server, projects, memories := newSuggestTestServer(t)
+	if _, err := projects.Upsert(ctx, project.UpsertInput{Key: "api", Name: "API"}); err != nil {
+		t.Fatalf("upsert project: %v", err)
+	}
+	stored, err := memories.Upsert(ctx, memory.UpsertInput{
+		Project: "api",
+		Title:   "Legacy route convention",
+		Content: "Legacy handlers called the transport directly.",
+		Source:  "docs/legacy.md",
+		Enrich:  true,
+	})
+	if err != nil {
+		t.Fatalf("upsert initial memory: %v", err)
+	}
+	updated, err := memories.Upsert(ctx, memory.UpsertInput{
+		Project: "api",
+		ID:      stored.ID,
+		Title:   "Server wrapper convention",
+		Content: "Handlers now call the Server wrapper for authenticated transport.",
+		Source:  "docs/server-wrapper.md",
+		Enrich:  true,
+	})
+	if err != nil {
+		t.Fatalf("update memory: %v", err)
+	}
+
+	result, err := server.handleMemorySearch(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Arguments: map[string]any{
+				"project": "api",
+				"query":   "Server wrapper authenticated transport",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("search updated memory: %v", err)
+	}
+	content, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("search structured content type = %T", result.StructuredContent)
+	}
+	cards, ok := content["results"].([]searchCardOutput)
+	if !ok || len(cards) != 1 {
+		t.Fatalf("updated search cards = %#v", content["results"])
+	}
+	card := cards[0]
+	if card.ID != stored.ID || card.Title != updated.Title || card.Source != updated.Source {
+		t.Fatalf("updated card identity and provenance = %#v", card)
+	}
+	if card.Description != updated.ShortSummary || strings.Contains(card.Description, "Legacy") {
+		t.Fatalf("updated card description = %q, want refreshed metadata", card.Description)
+	}
+	if !card.UpdatedAt.Equal(updated.UpdatedAt) {
+		t.Fatalf("updated card time = %s, want %s", card.UpdatedAt, updated.UpdatedAt)
+	}
+}
+
 func TestMemorySuggestStrongMatchRecommendsUpdate(t *testing.T) {
 	ctx, server, projects, memories := newSuggestTestServer(t)
 

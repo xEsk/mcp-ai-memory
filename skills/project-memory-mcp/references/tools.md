@@ -97,8 +97,8 @@ Use this sequence when token budget or retrieval quality matters:
 1. Call `memory.search.count` with the focused query and default mode.
 2. If `count` is `0`, try `mode: "balanced"` or a broader query.
 3. If `count` is too high, add `types`, `tags`, or a more specific query.
-4. Call `memory.search` only when the count is useful.
-5. Call `memory.get` for selected IDs when full content is needed.
+4. Call `memory.search` only when the count is useful, then use its compact cards to select plausible IDs.
+5. Call `memory.get` for selected IDs before relying on remembered facts, making technical decisions, or changing code.
 6. Call `memory.search.debug` only when investigating unexpected results.
 
 ## Search Modes
@@ -136,7 +136,7 @@ Returns:
 
 ### `memory.search`
 
-Search active memories inside one project.
+Search active memories inside one project and return compact candidate cards.
 
 ```json
 {
@@ -150,9 +150,25 @@ Search active memories inside one project.
 }
 ```
 
-Normal search responses are intentionally slim: ID, project, type, title, optional content, importance, source, created time, and updated time. They should not expose summaries, keywords, entities, aliases, snippets, scores, or match explanations.
+Normal search cards contain `id`, `title`, `description`, `source`, `updated_at`, `match_excerpt`, and `match_field`. `description` is a stored or deterministic preview of the memory topic. `match_excerpt` shows the selected FTS match context, and `match_field` identifies whether that context came from source data or generated retrieval metadata.
 
-Use `include_content: true` only when the full content is needed immediately. Otherwise fetch the chosen memory with `memory.get`.
+These card fields are guidance for selecting or rejecting candidates. They are not authoritative memory content, may omit the searched detail, and must not be used alone to assert facts, make technical decisions, or justify code changes. A missing query term in `description` is not evidence that the result is irrelevant.
+
+Call `memory.get` for every plausible selected ID and reason from its full `content`. If cards are ambiguous, read multiple candidates. Use `include_content: true` only when immediate bulk reading is justified; this adds authoritative `content` to each returned card.
+
+Example card:
+
+```json
+{
+  "id": "memory-id",
+  "title": "API calls go through Server wrapper",
+  "description": "Requests use the shared Server wrapper for authentication and base URL handling.",
+  "source": "codex investigation",
+  "updated_at": "2026-09-13T10:30:00Z",
+  "match_excerpt": "...new endpoints go through the [Server] wrapper...",
+  "match_field": "content"
+}
+```
 
 ### `memory.search.debug`
 
@@ -195,7 +211,7 @@ Use `enrich: false` when the memory may contain secrets, credentials, personal d
 
 ### `memory.get`
 
-Fetch one memory by ID and project. Use when a search result needs full content or verification.
+Fetch one memory by ID and project, including its authoritative full `content`. Use this after search before relying on a candidate memory.
 
 ```json
 {
@@ -366,8 +382,8 @@ How to use: edit source SCSS/JS and run the project build command.
 ```text
 Fact: MCP tool responses expose clean memory fields only; enrichment metadata stays internal.
 Where: internal/mcpserver/responses.go.
-Why: agents need the saved memory, while summaries, keywords, aliases, snippets, scores, and access metrics are retrieval machinery.
-How to use: keep normal response DTOs focused on id, project, type, title, content, importance, source, created_at, and updated_at; use memory.search.debug for ranking diagnostics.
+Why: agents need compact search guidance before loading authoritative memory content, while raw summaries, keywords, aliases, scores, and explanations remain retrieval machinery.
+How to use: keep memory.search cards focused on selection and require memory.get before relying on a candidate; use memory.search.debug for full ranking diagnostics.
 ```
 
 ### Bad Examples

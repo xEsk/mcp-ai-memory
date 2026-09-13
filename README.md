@@ -94,6 +94,8 @@ OpenCode loads config at startup, so quit and restart OpenCode after changing th
 
 All memory tools require `project` to avoid cross-project context leakage.
 
+Use `memory.search` to obtain compact candidate cards, select plausible IDs, and call `memory.get` before relying on remembered facts or making code changes. Card descriptions and match excerpts are navigation aids, not authoritative memory content. Set `include_content: true` on search only when immediate bulk reading is justified.
+
 ## Offline maintenance
 
 `inspect` is read-only and does not reserve or modify the store. Stop every MCP instance before `backup`, `restore`, or `rebuild-fts`; those operations reserve the database path exclusively. Use an explicit absolute path:

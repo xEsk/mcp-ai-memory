@@ -15,6 +15,8 @@ Use this skill to make project knowledge durable across sessions. The MCP is not
 - Query memory before changing unfamiliar areas, especially architecture, APIs, workflows, and conventions.
 - Prefer `memory.search.count` before full retrieval when token budget matters or when tuning a query.
 - Use `memory.search` with default `precise` mode first; broaden explicitly with `balanced` or `broad` only when needed.
+- Treat every `memory.search` result as a candidate card, not as memory evidence. `description`, `match_excerpt`, and `match_field` help select what to read; they are not authoritative content and may reflect generated retrieval metadata.
+- Before asserting a remembered fact, making a technical decision, or changing code from a search result, call `memory.get` for the selected ID and use its full `content`. When cards are ambiguous, read multiple plausible candidates instead of trusting the first preview.
 - Store only durable technical context that future coding agents can use. Do not store transient chat, secrets, credentials, personal data, or raw logs unless summarized into a useful technical fact.
 - Use `enrich: true` by default only for clean technical knowledge. Use `enrich: false` when content may contain secrets, credentials, personal data, sensitive private context, or anything that should not be sent to the configured AI enrichment provider.
 - Preserve exact technical names in memory content: class names, files, routes, tables, commands, config keys, services, and error names.
@@ -43,7 +45,8 @@ Use this skill to make project knowledge durable across sessions. The MCP is not
    - Use `memory.search` with default `precise` mode for normal retrieval.
    - Use `mode: "balanced"` when precise returns too little for a focused query.
    - Use `mode: "broad"` for exploratory recall when noisier results are acceptable.
-   - Use `include_content: true` only when result content is needed immediately; otherwise use `memory.get` for selected IDs.
+   - Inspect card order, title, description, source, update time, match excerpt, and match field only to select candidates. Missing query terms in a description do not prove that a result is irrelevant.
+   - Call `memory.get` for each plausible selected ID before relying on the memory. Use `include_content: true` only when immediate bulk reading is justified.
 5. Search semantically:
    - Architecture: `backend architecture`, `frontend organization`, `route registration`, `dependency injection`.
    - APIs: `how do we call the API`, `HTTP client`, `endpoint helper`, `auth headers`.
@@ -125,12 +128,14 @@ Search semantically, not just literally. Ask how an agent would naturally ask la
 Search progressively instead of treating one query as final:
 
 1. Start with one focused natural-language query in `precise` mode.
-2. If results are weak, try synonyms, nearby concepts, exact technical names, or a different phrasing.
-3. If the query is still focused, retry with `balanced`.
-4. If exploring an unfamiliar area, use `broad` and accept that results may need more filtering.
-5. Use `types` and `tags` to narrow large projects.
-6. Use `memory.search.count` before fetching when a query may be too broad.
-7. Use `memory.search.debug` only when retrieval quality itself is suspicious.
+2. Use the returned cards only to choose plausible IDs; do not turn card text into a factual claim.
+3. Call `memory.get` for selected IDs and reason from full `content`. Read several candidates when previews are ambiguous.
+4. If results are weak, try synonyms, nearby concepts, exact technical names, or a different phrasing.
+5. If the query is still focused, retry with `balanced`.
+6. If exploring an unfamiliar area, use `broad` and accept that results may need more filtering.
+7. Use `types` and `tags` to narrow large projects.
+8. Use `memory.search.count` before fetching when a query may be too broad.
+9. Use `memory.search.debug` only when retrieval quality itself is suspicious.
 
 Use search modes deliberately:
 

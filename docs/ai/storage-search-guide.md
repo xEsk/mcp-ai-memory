@@ -14,7 +14,7 @@ The main tables are `projects`, `memories`, `memory_enrichments`, and virtual ta
 
 Memory upsert writes original memory data to `memories`, writes derived retrieval metadata to `memory_enrichments`, and replaces the FTS row in a single transaction. Soft delete sets `deleted_at` and removes the FTS row.
 
-Returned memories track aggregate retrieval/exposure history internally with `access_count` and `last_accessed_at`. Public MCP output projects these as `retrieval_count` and `last_retrieved_at`; they do not demonstrate that a client read, reused, or valued a memory. Search, get, list, and debug search increment these fields for active memories they return. Suggestion performs its precise and optional balanced searches without recording, deduplicates the final public candidates, and records each final ID once. `memory.search.count` returns only the match count and must not increment access metrics.
+Returned memories track aggregate retrieval/exposure history internally with `access_count` and `last_accessed_at`. Full public memory output projects these as `retrieval_count` and `last_retrieved_at`; compact search cards omit them. Search, get, list, and debug search still increment the fields for active memories they return. Suggestion performs its precise and optional balanced searches without recording, deduplicates the final public candidates, and records each final ID once. `memory.search.count` returns only the match count and must not increment access metrics.
 
 ## Main Code Locations
 
@@ -51,7 +51,7 @@ Ranking uses SQLite `bm25`. Because `memory_id` and `project_key` occupy the fir
 
 Results are ordered by rank, then `importance`, then `updated_at`.
 
-Debug search obtains match evidence from SQLite `highlight()` across all ten indexed fields. It returns ordered `matched_fields`, the weight-prioritized `snippet_field`, a highlighted snippet, and an explanation derived from that same evidence. Normal search DTOs do not expose these diagnostic fields.
+Search obtains match evidence from SQLite `highlight()` across all ten indexed fields. Normal cards project only the selected highlighted context as `match_excerpt` and its source as `match_field`, so an agent can select candidates without treating the preview as authoritative content. Debug search additionally returns ordered `matched_fields`, `snippet_field`, `snippet`, score, and an explanation derived from the same evidence.
 
 A synthetic temporary-database ranking fixture exercises the real schema and `FTS.Search` and asserts relative field ordering rather than SQLite-version-specific floating-point scores. The correction is query-time only, so it requires no schema migration, FTS rebuild, or re-enrichment.
 

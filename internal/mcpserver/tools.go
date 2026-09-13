@@ -18,14 +18,20 @@ func (s *Server) registerTools() {
 	), s.traceTool("memory.server.info", s.handleServerInfo))
 
 	s.mcp.AddTool(mcp.NewTool("memory.search",
-		mcp.WithDescription("Search project-scoped AI memories with SQLite FTS5 over original and enriched fields."),
+		mcp.WithDescription(
+			"Search project-scoped AI memories and return compact candidate cards for selection. "+
+				"Card descriptions and match excerpts are guidance only, not authoritative memory content; "+
+				"use memory.get before relying on a result.",
+		),
 		mcp.WithString("project", mcp.Required(), mcp.Description("Project key")),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Contextual search query")),
 		mcp.WithString("mode", mcp.Enum("precise", "balanced", "broad"), mcp.Description("Search strictness, default precise")),
 		mcp.WithNumber("limit", mcp.Description("Maximum results, default 10")),
 		mcp.WithArray("types", mcp.WithStringItems()),
 		mcp.WithArray("tags", mcp.WithStringItems()),
-		mcp.WithBoolean("include_content", mcp.Description("Include full memory content")),
+		mcp.WithBoolean("include_content", mcp.Description(
+			"Explicitly include authoritative full content when immediate bulk reading is justified; default false",
+		)),
 	), s.traceTool("memory.search", s.handleMemorySearch))
 
 	s.mcp.AddTool(mcp.NewTool("memory.search.count",
@@ -68,7 +74,10 @@ func (s *Server) registerTools() {
 	), s.traceTool("memory.delete", s.handleMemoryDelete))
 
 	s.mcp.AddTool(mcp.NewTool("memory.get",
-		mcp.WithDescription("Get one memory by ID inside a project."),
+		mcp.WithDescription(
+			"Retrieve one selected project memory with its authoritative full content. "+
+				"Use this before relying on facts suggested by a memory.search card.",
+		),
 		mcp.WithString("project", mcp.Required()),
 		mcp.WithString("id", mcp.Required()),
 	), s.traceTool("memory.get", s.handleMemoryGet))
@@ -122,7 +131,14 @@ func (s *Server) handleMemorySearch(ctx context.Context, request mcp.CallToolReq
 	if err != nil {
 		return toolError("%v", err), nil
 	}
-	results, err := s.search.Search(ctx, p.ID, p.Key, search.Input(input))
+	results, err := s.search.Search(ctx, p.ID, p.Key, search.Input{
+		Project: input.Project,
+		Query:   input.Query,
+		Mode:    input.Mode,
+		Limit:   input.Limit,
+		Types:   input.Types,
+		Tags:    input.Tags,
+	})
 	if err != nil {
 		if errors.Is(err, search.ErrInvalidMode) || errors.Is(err, search.ErrInvalidQuery) {
 			return toolError("%v", err), nil
@@ -292,11 +308,10 @@ func (s *Server) handleMemorySuggest(ctx context.Context, request mcp.CallToolRe
 		return nil, err
 	}
 	results, err := s.search.SearchWithoutRecording(ctx, p.ID, p.Key, search.Input{
-		Project:        input.Project,
-		Query:          query,
-		Mode:           mode,
-		Limit:          5,
-		IncludeContent: true,
+		Project: input.Project,
+		Query:   query,
+		Mode:    mode,
+		Limit:   5,
 	})
 	if err != nil {
 		if errors.Is(err, search.ErrInvalidMode) || errors.Is(err, search.ErrInvalidQuery) {
@@ -314,11 +329,10 @@ func (s *Server) handleMemorySuggest(ctx context.Context, request mcp.CallToolRe
 			return nil, err
 		}
 		balanced, searchErr := s.search.SearchWithoutRecording(ctx, p.ID, p.Key, search.Input{
-			Project:        input.Project,
-			Query:          query,
-			Mode:           mode,
-			Limit:          5,
-			IncludeContent: true,
+			Project: input.Project,
+			Query:   query,
+			Mode:    mode,
+			Limit:   5,
 		})
 		if searchErr != nil {
 			if errors.Is(searchErr, search.ErrInvalidMode) || errors.Is(searchErr, search.ErrInvalidQuery) {

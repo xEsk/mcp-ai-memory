@@ -26,7 +26,7 @@ Original `content` is source data. Generated summary, keywords, tags, entities, 
 
 `memory.search.count` uses the same compiler and filter but returns only a count and does not record access. `memory.search.debug` uses the normal retrieval path and exposes SQLite-highlight-backed matched fields, selected snippet field, highlighted snippet, score, and an evidence-derived explanation.
 
-`memory.get` and `memory.list` query active rows directly. List supports one type and one simple JSON-text tag filter, orders by `updated_at DESC`, and does not use FTS.
+`memory.get` and `memory.list` query active rows directly. Get returns authoritative full content. List supports one type and one simple JSON-text tag filter, orders by `updated_at DESC`, and does not use FTS.
 
 Search results are ranked by FTS5 BM25, then memory importance, then update time. The two leading FTS columns are `UNINDEXED`; preserve the two leading neutral BM25 weights before field weights.
 
@@ -34,7 +34,9 @@ Search results are ranked by FTS5 BM25, then memory importance, then update time
 
 Search, debug search, get, list, and suggestion candidates increment `memories.access_count` and set `last_accessed_at` for active returned rows. These fields are aggregate server exposure, not proof of client reuse or value.
 
-Public responses expose them as `retrieval_count` and `last_retrieved_at`. Normal memory output contains only core source fields; content is omitted from normal search unless `include_content` is true. Do not expose enrichment values, snippets, scores, or match explanations except through explicit diagnostics.
+Full memory responses expose access fields as `retrieval_count` and `last_retrieved_at`. Normal search instead returns compact candidate cards: `id`, `title`, bounded `description`, `source`, `updated_at`, `match_excerpt`, and `match_field`. `content` is present only when `include_content` is true.
+
+Card descriptions reuse stored `short_summary`, with a deterministic source-content fallback when it is empty. Match guidance reuses the selected SQLite highlight already computed by search. Both are navigation aids and may reflect generated enrichment; only full `content` from `memory.get` or explicit search inclusion is authoritative.
 
 ## Suggestion and Delete
 
@@ -54,7 +56,7 @@ Public responses expose them as `retrieval_count` and `last_retrieved_at`. Norma
 - Keep both FTS `project_key` and relational `project_id` search filters.
 - Keep source, enrichment, and FTS writes transactional.
 - Do not return deleted rows or write protocol diagnostics to stdout.
-- Treat normal MCP output as a stable public contract; retrieval machinery remains internal by default.
+- Keep search cards compact and explicitly non-authoritative. Retrieval machinery remains internal except for the bounded description and match guidance required to select candidates.
 
 ## Related Documents
 

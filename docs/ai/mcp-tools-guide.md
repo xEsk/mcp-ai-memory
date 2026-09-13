@@ -12,17 +12,17 @@ Read this before changing tool schemas, tool names, or handler behavior.
 
 Handlers bind JSON arguments with `request.BindArguments`, validate required fields, resolve project ownership where needed, call services, and return structured MCP results.
 
-Public memory responses are intentionally slim. Enrichment fields are internal retrieval machinery and should not be returned to agents unless a diagnostic/debug tool is explicitly added.
+Public memory responses are intentionally shaped by use. `memory.search` returns compact candidate cards for selection, while `memory.get` returns the authoritative stored content. Internal enrichment remains private except for the bounded description and match guidance projected on search cards.
 
 ## Current Tools
 
 - `project.upsert`: create or update a project by key.
 - `project.list`: list projects.
 - `memory.upsert`: create or update a memory and refresh search metadata/index.
-- `memory.search`: search active memories inside one project with optional `mode`.
+- `memory.search`: search active memories inside one project and return compact candidate cards, with optional full content.
 - `memory.search.count`: count matching active memories without returning memories or recording access.
 - `memory.search.debug`: inspect SQLite-backed matched fields, selected highlighted snippets, scores, and evidence-derived explanations.
-- `memory.get`: retrieve one active memory by project and ID.
+- `memory.get`: retrieve one active memory by project and ID, including authoritative full content.
 - `memory.list`: list active memories with optional type/tag filters.
 - `memory.delete`: soft-delete one memory.
 - `memory.suggest`: search similar memories and return a non-mutating suggestion.
@@ -44,12 +44,15 @@ When adding a tool:
 - `memory.server.info` intentionally returns only basic identity fields: `name` and `version`.
 - `memory.upsert` defaults `enrich` to true if the argument is omitted.
 - `memory.search` defaults to `precise` mode. Clients can request `balanced` or `broad` when they want wider recall.
+- Normal search cards contain only `id`, `title`, `description`, `source`, `updated_at`, `match_excerpt`, `match_field`, and optional `content`. Their order still reflects the unchanged FTS ranking.
+- `description`, `match_excerpt`, and `match_field` are candidate-selection guidance, not authoritative evidence. Clients must call `memory.get` before relying on a card unless they explicitly requested `include_content: true` and use the returned `content`.
+- `description` reuses stored `short_summary`, normalized and capped at 160 Unicode runes. If stored metadata is empty, response shaping falls back deterministically to the source content without an LLM call.
 - Search, count, debug, and suggest return a tool error for normalized empty queries, including punctuation-only and stopword-only input.
 - `memory.suggest` must not mutate memory content in v1. It searches with `precise` first, then retries with `balanced` when precise has no safe recommendation. Its response includes `search_mode` so clients can tell whether broadening was required.
 - `memory.suggest` candidates are ranked by relevance to the suggestion input, then passed through a local semantic quality gate. `recommended_candidate_id` is set only when the best candidate is strong enough for `update_existing`. Candidate `memory.importance` remains global memory importance, not match quality. Use `candidate_quality` for structured match quality and `next_step` for compact agent workflow guidance.
 - Successful structured handlers use `mcp.NewToolResultStructuredOnly`. In the pinned `mcp-go` version this produces both `structuredContent` and an equivalent JSON `TextContent` fallback in required `content`.
-- Memory responses should expose the saved memory core, not generated retrieval fields. Use `internal/mcpserver/responses.go` for response shaping.
-- Debug results add `matched_fields`, `snippet_field`, `snippet`, `score`, and `match_explanation`. These fields remain exclusive to `memory.search.debug`.
+- Full memory responses should expose the saved memory core, not generated retrieval fields. Use `internal/mcpserver/responses.go` for response shaping.
+- Normal cards reuse the selected SQLite highlight as `match_excerpt` and its origin as `match_field`. Debug results additionally expose all `matched_fields`, `snippet_field`, `snippet`, `score`, and `match_explanation` through `memory.search.debug`.
 
 ## Common Mistakes To Avoid
 
@@ -57,7 +60,8 @@ When adding a tool:
 - Do not silently accept missing project keys.
 - Do not rename tools casually; clients may depend on names.
 - Do not expose deleted memories through get/list/search.
-- Do not expose `summary`, `keywords`, `entities`, `aliases`, `search_phrases`, snippets, ranking scores, or debug match explanations in normal memory responses. Use `memory.search.debug` for diagnostic ranking data.
+- Do not expose raw `summary`, `short_summary`, keywords, entities, aliases, search phrases, ranking scores, or debug explanations in normal memory responses. The only normal-search projections of this machinery are bounded `description`, `match_excerpt`, and `match_field` guidance.
+- Do not treat a card preview as memory evidence or assume its description contains the terms responsible for the match.
 - Do not remove `content`: it is required by the MCP `CallToolResult` schema and is still the only model-visible result path in some clients.
 - Do not strip `structuredContent` merely to reduce Codex context. Codex direct calls select one representation before model context, while typed clients use structured data without reparsing JSON text.
 - Do not add an MCP `outputSchema` until the server can declare and maintain accurate schemas for every successful structured result. Once declared, successful `structuredContent` must conform and clients should validate it; tool errors remain text in `content` with `isError: true`.

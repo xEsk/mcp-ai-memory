@@ -64,10 +64,9 @@ func TestMemoryLifecycle_SearchIsProjectScoped(t *testing.T) {
 	}
 
 	results, err := searchService.Search(ctx, apiProject.ID, apiProject.Key, search.Input{
-		Project:        "api",
-		Query:          "how do we call the API?",
-		Limit:          10,
-		IncludeContent: true,
+		Project: "api",
+		Query:   "how do we call the API?",
+		Limit:   10,
 	})
 	if err != nil {
 		t.Fatalf("search api memories: %v", err)
@@ -108,10 +107,9 @@ func TestMemoryLifecycle_SearchIsProjectScoped(t *testing.T) {
 	}
 
 	uiResults, err := searchService.Search(ctx, uiProject.ID, uiProject.Key, search.Input{
-		Project:        "ui",
-		Query:          "Server class API route",
-		Limit:          10,
-		IncludeContent: true,
+		Project: "ui",
+		Query:   "Server class API route",
+		Limit:   10,
 	})
 	if err != nil {
 		t.Fatalf("search ui memories: %v", err)

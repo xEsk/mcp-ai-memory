@@ -112,9 +112,6 @@ func (f *FTS) search(ctx context.Context, projectID, projectKey string, input In
 			strings.Join(m.SearchPhrases, " "), m.Content,
 		}
 		matchedFields, snippetField, snippet, explanation := searchEvidence(filter.Mode, originals, highlights)
-		if !input.IncludeContent {
-			m.Content = ""
-		}
 		results = append(results, Result{
 			Memory:           m,
 			MatchedFields:    matchedFields,
