@@ -90,3 +90,79 @@ func TestFTSShortTechnicalTermsRemainExactAndProjectScoped(t *testing.T) {
 		t.Fatalf("search empty normalized query error = %v, want ErrInvalidQuery", err)
 	}
 }
+
+func TestFTSBalancedRejectsMostlyUnknownProjectVocabulary(t *testing.T) {
+	ctx := context.Background()
+	db, err := storage.OpenSQLite(ctx, filepath.Join(t.TempDir(), "memory.db"))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close sqlite: %v", err)
+		}
+	})
+
+	const (
+		projectID  = "vocabulary-project-id"
+		projectKey = "vocabulary-project"
+		otherID    = "voice-project-id"
+		otherKey   = "voice-project"
+	)
+	frozenAt := time.Date(2026, time.September, 13, 10, 0, 0, 0, time.UTC)
+	projects := project.NewRepository(db)
+	for _, fixture := range []project.Project{
+		{ID: projectID, Key: projectKey, Name: "Vocabulary", CreatedAt: frozenAt, UpdatedAt: frozenAt},
+		{ID: otherID, Key: otherKey, Name: "Voice", CreatedAt: frozenAt, UpdatedAt: frozenAt},
+	} {
+		if _, err := projects.Upsert(ctx, fixture); err != nil {
+			t.Fatalf("upsert project %q: %v", fixture.Key, err)
+		}
+	}
+
+	memories := memory.NewRepository(db)
+	for _, fixture := range []memory.Memory{
+		{
+			ID: "claimant-architecture", ProjectID: projectID, ProjectKey: projectKey,
+			Type: "architecture", Title: "Claimant conversation authority", Content: "Claimant conversation authority.",
+			Importance: 4, CreatedAt: frozenAt, UpdatedAt: frozenAt,
+		},
+		{
+			ID: "voice-architecture", ProjectID: otherID, ProjectKey: otherKey,
+			Type: "architecture", Title: "Voice audio realtime telephony", Content: "Voice telephony media streaming intake.",
+			Importance: 4, CreatedAt: frozenAt, UpdatedAt: frozenAt,
+		},
+	} {
+		if _, err := memories.Upsert(ctx, fixture); err != nil {
+			t.Fatalf("upsert memory %q: %v", fixture.ID, err)
+		}
+	}
+
+	fts := NewFTS(db)
+	query := "voice audio realtime channel conversation telephony claimant intake architecture authority"
+	balanced := Input{Project: projectKey, Query: query, Mode: ModeBalanced, Limit: 10}
+	count, mode, err := fts.Count(ctx, projectID, projectKey, balanced)
+	if err != nil {
+		t.Fatalf("count balanced query: %v", err)
+	}
+	if mode != ModeBalanced || count != 0 {
+		t.Fatalf("balanced count = (%d, %q), want (0, %q)", count, mode, ModeBalanced)
+	}
+	results, err := fts.Search(ctx, projectID, projectKey, balanced)
+	if err != nil {
+		t.Fatalf("search balanced query: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("balanced search returned %v, want no results", results)
+	}
+
+	broad := balanced
+	broad.Mode = ModeBroad
+	results, err = fts.Search(ctx, projectID, projectKey, broad)
+	if err != nil {
+		t.Fatalf("search broad query: %v", err)
+	}
+	if len(results) != 1 || results[0].Memory.ID != "claimant-architecture" {
+		t.Fatalf("broad search returned %v, want claimant-architecture", results)
+	}
+}

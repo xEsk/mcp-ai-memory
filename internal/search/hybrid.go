@@ -21,7 +21,8 @@ func (s *Service) Search(ctx context.Context, projectID, projectKey string, inpu
 	return s.fts.Search(ctx, projectID, projectKey, input)
 }
 
-// SearchWithoutRecording searches without changing retrieval history.
+// SearchWithoutRecording runs the unrestricted candidate search used by
+// suggestion without changing retrieval history.
 func (s *Service) SearchWithoutRecording(ctx context.Context, projectID, projectKey string, input Input) ([]Result, error) {
 	return s.fts.SearchWithoutRecording(ctx, projectID, projectKey, input)
 }

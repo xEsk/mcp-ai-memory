@@ -46,11 +46,15 @@ func CompileQuery(query, mode string) (CompiledQuery, error) {
 	}
 	expressions := make([]string, 0, len(terms))
 	for _, term := range terms {
-		expression := `"` + strings.ReplaceAll(term.Text, `"`, `""`) + `"`
-		if !term.Exact {
-			expression += "*"
-		}
-		expressions = append(expressions, expression)
+		expressions = append(expressions, compileTermExpression(term))
 	}
 	return CompiledQuery{Expression: strings.Join(expressions, operator), Terms: terms, Mode: normalizedMode}, nil
+}
+
+func compileTermExpression(term QueryTerm) string {
+	expression := `"` + strings.ReplaceAll(term.Text, `"`, `""`) + `"`
+	if !term.Exact {
+		expression += "*"
+	}
+	return expression
 }

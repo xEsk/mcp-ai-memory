@@ -19,10 +19,10 @@ import (
 	"mcp-ai-memory/internal/storage"
 )
 
-//go:embed testdata/retrieval_quality_corpus_v2.json
-var retrievalQualityCorpusV1 []byte
+//go:embed testdata/retrieval_quality_corpus_v3.json
+var retrievalQualityCorpusV3 []byte
 
-const retrievalQualityVersion = "2026-08-24-v2"
+const retrievalQualityVersion = "2026-09-13-v3"
 
 type qualityCorpus struct {
 	CorpusVersion string           `json:"corpus_version"`
@@ -54,6 +54,7 @@ type qualityQuery struct {
 	Project   string            `json:"project"`
 	Text      string            `json:"text"`
 	Mode      string            `json:"mode"`
+	Modes     []string          `json:"modes"`
 	Slice     string            `json:"slice"`
 	Critical  bool              `json:"critical"`
 	NoMatch   bool              `json:"no_match"`
@@ -66,8 +67,10 @@ type qualityJudgment struct {
 }
 
 type qualityBaseline struct {
-	Global qualityScores            `json:"global"`
-	Slices map[string]qualityScores `json:"slices"`
+	Global                    qualityScores            `json:"global"`
+	Slices                    map[string]qualityScores `json:"slices"`
+	Modes                     map[string]qualityScores `json:"modes"`
+	NoMatchFalsePositivesMode map[string]int           `json:"no_match_false_positives_by_mode"`
 }
 
 type qualityScores struct {
@@ -84,6 +87,10 @@ type qualitySummary struct {
 	FalsePositives     int
 	Leakage            int
 	CriticalGrade3Miss int
+}
+
+type qualityRun struct {
+	IDs []string
 }
 
 func TestEvaluateQuality_PerfectRanking(t *testing.T) {
@@ -150,6 +157,18 @@ func TestRetrievalQualityCorpus_ValidatesBeforeSearch(t *testing.T) {
 				corpus.Queries[0].Judgments[0].MemoryID = "ui-route-registry-copy"
 			},
 		},
+		{
+			name: "mode and modes both set",
+			mutate: func(corpus *qualityCorpus) {
+				corpus.Queries[0].Modes = []string{ModePrecise}
+			},
+		},
+		{
+			name: "duplicate query mode",
+			mutate: func(corpus *qualityCorpus) {
+				corpus.Queries[17].Modes = []string{ModePrecise, ModePrecise}
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			corpus := loadQualityCorpus(t)
@@ -200,37 +219,49 @@ func TestRetrievalQuality_VersionedSyntheticGate(t *testing.T) {
 	}
 
 	global := qualitySummary{}
+	legacy := qualitySummary{}
 	bySlice := map[string]qualitySummary{}
 	byMode := map[string]qualitySummary{}
+	runs := map[string]map[string]qualityRun{}
 	for _, query := range corpus.Queries {
-		fixtureProject := storedProjects[query.Project]
-		results, err := searchService.Search(ctx, fixtureProject.ID, fixtureProject.Key, Input{
-			Project: query.Project, Query: query.Text, Mode: query.Mode, Limit: 10,
-		})
-		if err != nil {
-			t.Fatalf("search fixture query %q: %v", query.ID, err)
-		}
-		ids := make([]string, 0, len(results))
-		leakage := 0
-		for _, result := range results {
-			ids = append(ids, result.Memory.ID)
-			if result.Memory.ProjectID != fixtureProject.ID || result.Memory.ProjectKey != fixtureProject.Key {
-				leakage++
+		for _, mode := range qualityQueryModes(query) {
+			fixtureProject := storedProjects[query.Project]
+			results, err := searchService.Search(ctx, fixtureProject.ID, fixtureProject.Key, Input{
+				Project: query.Project, Query: query.Text, Mode: mode, Limit: 10,
+			})
+			if err != nil {
+				t.Fatalf("search fixture query %q in mode %q: %v", query.ID, mode, err)
 			}
+			ids := make([]string, 0, len(results))
+			leakage := 0
+			for _, result := range results {
+				ids = append(ids, result.Memory.ID)
+				if result.Memory.ProjectID != fixtureProject.ID || result.Memory.ProjectKey != fixtureProject.Key {
+					leakage++
+				}
+			}
+			score := evaluateQuality(query, ids)
+			score.Leakage = leakage
+			global.add(score)
+			if query.Mode != "" {
+				legacy.add(score)
+			}
+			slice := bySlice[query.Slice]
+			slice.add(score)
+			bySlice[query.Slice] = slice
+			modeScore := byMode[mode]
+			modeScore.add(score)
+			byMode[mode] = modeScore
+			if runs[query.ID] == nil {
+				runs[query.ID] = map[string]qualityRun{}
+			}
+			runs[query.ID][mode] = qualityRun{IDs: ids}
+			t.Logf("query=%s slice=%s mode=%s ids=%v metrics=%s", query.ID, query.Slice, mode, ids, score.report())
 		}
-		score := evaluateQuality(query, ids)
-		score.Leakage = leakage
-		global.add(score)
-		slice := bySlice[query.Slice]
-		slice.add(score)
-		bySlice[query.Slice] = slice
-		mode := byMode[query.Mode]
-		mode.add(score)
-		byMode[query.Mode] = mode
-		t.Logf("query=%s slice=%s mode=%s ids=%v metrics=%s", query.ID, query.Slice, query.Mode, ids, score.report())
 	}
 
 	global.finalize()
+	legacy.finalize()
 	for slice, score := range bySlice {
 		score.finalize()
 		bySlice[slice] = score
@@ -247,13 +278,13 @@ func TestRetrievalQuality_VersionedSyntheticGate(t *testing.T) {
 		t.Logf("quality mode=%s %s", key, byMode[key].report())
 	}
 
-	assertQualityGate(t, corpus, global, bySlice)
+	assertQualityGate(t, corpus, global, legacy, bySlice, byMode, runs)
 }
 
 func loadQualityCorpus(t *testing.T) qualityCorpus {
 	t.Helper()
 	var corpus qualityCorpus
-	if err := json.Unmarshal(retrievalQualityCorpusV1, &corpus); err != nil {
+	if err := json.Unmarshal(retrievalQualityCorpusV3, &corpus); err != nil {
 		t.Fatalf("decode retrieval quality corpus: %v", err)
 	}
 	return corpus
@@ -312,8 +343,19 @@ func validateQualityCorpus(corpus qualityCorpus) error {
 		if _, exists := slices[query.Slice]; !exists {
 			return fmt.Errorf("query %q references unknown slice %q", query.ID, query.Slice)
 		}
-		if _, err := normalizeMode(query.Mode); err != nil {
-			return fmt.Errorf("query %q has invalid mode: %w", query.ID, err)
+		if (query.Mode == "") == (len(query.Modes) == 0) {
+			return fmt.Errorf("query %q must define exactly one of mode or modes", query.ID)
+		}
+		seenModes := map[string]struct{}{}
+		for _, mode := range qualityQueryModes(query) {
+			normalizedMode, err := normalizeMode(mode)
+			if err != nil {
+				return fmt.Errorf("query %q has invalid mode %q: %w", query.ID, mode, err)
+			}
+			if _, exists := seenModes[normalizedMode]; exists {
+				return fmt.Errorf("query %q duplicates mode %q", query.ID, normalizedMode)
+			}
+			seenModes[normalizedMode] = struct{}{}
 		}
 		if query.NoMatch && len(query.Judgments) != 0 {
 			return fmt.Errorf("no-match query %q has judgments", query.ID)
@@ -366,6 +408,13 @@ func validateQualityCorpus(corpus qualityCorpus) error {
 	return nil
 }
 
+func qualityQueryModes(query qualityQuery) []string {
+	if len(query.Modes) > 0 {
+		return query.Modes
+	}
+	return []string{query.Mode}
+}
+
 func validateBaseline(baseline qualityBaseline, slices map[string]struct{}) error {
 	if err := validateQualityScores(baseline.Global); err != nil {
 		return fmt.Errorf("invalid global baseline: %w", err)
@@ -382,6 +431,19 @@ func validateBaseline(baseline qualityBaseline, slices map[string]struct{}) erro
 	for slice := range baseline.Slices {
 		if _, exists := slices[slice]; !exists {
 			return fmt.Errorf("baseline references unknown slice %q", slice)
+		}
+	}
+	for _, mode := range []string{ModePrecise, ModeBalanced, ModeBroad} {
+		scores, exists := baseline.Modes[mode]
+		if !exists {
+			return fmt.Errorf("missing baseline for mode %q", mode)
+		}
+		if err := validateQualityScores(scores); err != nil {
+			return fmt.Errorf("invalid baseline for mode %q: %w", mode, err)
+		}
+		falsePositives, exists := baseline.NoMatchFalsePositivesMode[mode]
+		if !exists || falsePositives < 0 {
+			return fmt.Errorf("invalid no-match false-positive baseline for mode %q", mode)
 		}
 	}
 	return nil
@@ -495,19 +557,25 @@ func (summary qualitySummary) report() string {
 	return fmt.Sprintf("Hit@1=%.2f Recall@5=%.2f MRR@10=%.2f nDCG@5=%.2f evaluable=%d no_match=%d false_positive=%d leakage=%d critical_grade3_miss=%d", summary.HitAt1, summary.RecallAt5, summary.MRRAt10, summary.NDCGAt5, summary.Evaluable, summary.NoMatch, summary.FalsePositives, summary.Leakage, summary.CriticalGrade3Miss)
 }
 
-func assertQualityGate(t *testing.T, corpus qualityCorpus, global qualitySummary, bySlice map[string]qualitySummary) {
+func assertQualityGate(
+	t *testing.T,
+	corpus qualityCorpus,
+	global, legacy qualitySummary,
+	bySlice, byMode map[string]qualitySummary,
+	runs map[string]map[string]qualityRun,
+) {
 	t.Helper()
 	if global.Leakage != 0 {
 		t.Errorf("project leakage = %d, want 0", global.Leakage)
 	}
-	if global.FalsePositives != 0 {
-		t.Errorf("no-match false positives = %d, want 0", global.FalsePositives)
+	if legacy.HitAt1 != 1 || legacy.RecallAt5 != 1 || legacy.MRRAt10 != 1 || legacy.NDCGAt5 != 1 || legacy.FalsePositives != 0 || legacy.CriticalGrade3Miss != 0 {
+		t.Errorf("legacy v2 cases regressed: %s", legacy.report())
 	}
-	if global.CriticalGrade3Miss != 0 {
-		t.Errorf("critical grade-3 targets outside top 5 = %d, want 0", global.CriticalGrade3Miss)
+	if precise := byMode[ModePrecise]; precise.FalsePositives != 0 {
+		t.Errorf("precise no-match false positives = %d, want 0", precise.FalsePositives)
 	}
-	if global.RecallAt5 < 0.90 || global.MRRAt10 < 0.80 || global.NDCGAt5 < 0.80 {
-		t.Errorf("global thresholds failed: %s", global.report())
+	if balanced := byMode[ModeBalanced]; balanced.FalsePositives != 0 || balanced.CriticalGrade3Miss != 0 {
+		t.Errorf("balanced quality gate failed: %s", balanced.report())
 	}
 	identifier := bySlice["identifier_path"]
 	if identifier.HitAt1 != 1 {
@@ -521,7 +589,7 @@ func assertQualityGate(t *testing.T, corpus qualityCorpus, global qualitySummary
 		t.Errorf("heuristic hard-negative false positives = %d, want 0", hardNegative.FalsePositives)
 	}
 	for slice, score := range bySlice {
-		if slice == "no_match" {
+		if slice == "no_match" || slice == "conceptual" || slice == "noisy_multi_intent" {
 			continue
 		}
 		if score.RecallAt5 < 0.80 {
@@ -536,7 +604,62 @@ func assertQualityGate(t *testing.T, corpus qualityCorpus, global qualitySummary
 			t.Errorf("slice %q Recall@5 regressed from %.2f to %.2f (limit 0.05)", slice, baseline.RecallAt5, score.RecallAt5)
 		}
 	}
+	for _, query := range corpus.Queries {
+		if len(query.Modes) == 0 {
+			continue
+		}
+		gradeThreeID := ""
+		for _, judgment := range query.Judgments {
+			if judgment.Grade == 3 {
+				gradeThreeID = judgment.MemoryID
+				break
+			}
+		}
+		if query.NoMatch {
+			for _, mode := range []string{ModePrecise, ModeBalanced} {
+				if got := runs[query.ID][mode].IDs; len(got) != 0 {
+					t.Errorf("query %q mode %q returned %v, want no result", query.ID, mode, got)
+				}
+			}
+			continue
+		}
+		if query.Slice == "identifier_path" {
+			for _, mode := range qualityQueryModes(query) {
+				got := runs[query.ID][mode].IDs
+				if len(got) == 0 || got[0] != gradeThreeID {
+					t.Errorf("identifier query %q mode %q first result = %v, want %q", query.ID, mode, got, gradeThreeID)
+				}
+			}
+		}
+		if query.Slice == "conceptual" {
+			got := runs[query.ID][ModeBalanced].IDs
+			if len(got) == 0 || got[0] != gradeThreeID {
+				t.Errorf("conceptual query %q balanced first result = %v, want %q", query.ID, got, gradeThreeID)
+			}
+		}
+		if query.Slice == "noisy_multi_intent" {
+			got := runs[query.ID][ModeBalanced].IDs
+			if indexOfQualityID(got, gradeThreeID) < 0 || indexOfQualityID(got, gradeThreeID) >= 5 {
+				t.Errorf("noisy query %q balanced results = %v, want %q in top 5", query.ID, got, gradeThreeID)
+			}
+		}
+	}
 	assertGlobalRegression(t, corpus.Baseline.Global, global.qualityScores)
+	for mode, baseline := range corpus.Baseline.Modes {
+		assertGlobalRegression(t, baseline, byMode[mode].qualityScores)
+		if byMode[mode].FalsePositives > corpus.Baseline.NoMatchFalsePositivesMode[mode] {
+			t.Errorf("mode %q no-match false positives regressed from %d to %d", mode, corpus.Baseline.NoMatchFalsePositivesMode[mode], byMode[mode].FalsePositives)
+		}
+	}
+}
+
+func indexOfQualityID(ids []string, wanted string) int {
+	for i, id := range ids {
+		if id == wanted {
+			return i
+		}
+	}
+	return -1
 }
 
 func assertGlobalRegression(t *testing.T, baseline, current qualityScores) {

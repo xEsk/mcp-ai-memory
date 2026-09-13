@@ -25,15 +25,16 @@ func NewFTS(db *sql.DB) *FTS {
 
 // Search runs text search with weighted enriched fields.
 func (f *FTS) Search(ctx context.Context, projectID, projectKey string, input Input) ([]Result, error) {
-	return f.search(ctx, projectID, projectKey, input, true)
+	return f.search(ctx, projectID, projectKey, input, true, true)
 }
 
-// SearchWithoutRecording runs text search without changing retrieval history.
+// SearchWithoutRecording runs the unrestricted candidate search used by
+// suggestion without changing retrieval history.
 func (f *FTS) SearchWithoutRecording(ctx context.Context, projectID, projectKey string, input Input) ([]Result, error) {
-	return f.search(ctx, projectID, projectKey, input, false)
+	return f.search(ctx, projectID, projectKey, input, false, false)
 }
 
-func (f *FTS) search(ctx context.Context, projectID, projectKey string, input Input, recordAccess bool) ([]Result, error) {
+func (f *FTS) search(ctx context.Context, projectID, projectKey string, input Input, recordAccess, applyVocabularyGuard bool) ([]Result, error) {
 	limit := input.Limit
 	if limit <= 0 {
 		limit = 10
@@ -45,6 +46,15 @@ func (f *FTS) search(ctx context.Context, projectID, projectKey string, input In
 	filter, err := buildFilter(projectID, projectKey, input)
 	if err != nil {
 		return nil, err
+	}
+	if applyVocabularyGuard && filter.Mode == ModeBalanced {
+		mostlyUnknown, err := f.queryMostlyUnknownToProject(ctx, projectID, projectKey, filter.Query)
+		if err != nil {
+			return nil, err
+		}
+		if mostlyUnknown {
+			return nil, nil
+		}
 	}
 	query := `SELECT m.id, m.project_id, m.type, m.title, m.content,
 		COALESCE(e.summary, ''), COALESCE(e.short_summary, ''),
@@ -254,6 +264,15 @@ func (f *FTS) Count(ctx context.Context, projectID, projectKey string, input Inp
 	if err != nil {
 		return 0, "", err
 	}
+	if filter.Mode == ModeBalanced {
+		mostlyUnknown, err := f.queryMostlyUnknownToProject(ctx, projectID, projectKey, filter.Query)
+		if err != nil {
+			return 0, "", err
+		}
+		if mostlyUnknown {
+			return 0, filter.Mode, nil
+		}
+	}
 	query := `SELECT COUNT(*)
 		FROM memory_fts
 		JOIN memories m ON m.id = memory_fts.memory_id
@@ -265,6 +284,39 @@ func (f *FTS) Count(ctx context.Context, projectID, projectKey string, input Inp
 		return 0, "", fmt.Errorf("counting memories: %w", err)
 	}
 	return count, filter.Mode, nil
+}
+
+// queryMostlyUnknownToProject detects long balanced queries whose vocabulary is
+// mostly absent from the active memories in the requested project.
+func (f *FTS) queryMostlyUnknownToProject(ctx context.Context, projectID, projectKey string, query CompiledQuery) (bool, error) {
+	if len(query.Terms) < 4 {
+		return false, nil
+	}
+	unknown := 0
+	threshold := (len(query.Terms) + 1) / 2
+	const termExistsQuery = `SELECT EXISTS(
+		SELECT 1
+		FROM memory_fts
+		JOIN memories m ON m.id = memory_fts.memory_id
+		WHERE memory_fts MATCH ?
+			AND memory_fts.project_key = ?
+			AND m.project_id = ?
+			AND m.deleted_at IS NULL
+		LIMIT 1
+	)`
+	for _, term := range query.Terms {
+		var exists bool
+		if err := f.db.QueryRowContext(ctx, termExistsQuery, compileTermExpression(term), projectKey, projectID).Scan(&exists); err != nil {
+			return false, fmt.Errorf("checking project query vocabulary: %w", err)
+		}
+		if !exists {
+			unknown++
+			if unknown >= threshold {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func (f *FTS) recordSearchAccesses(ctx context.Context, projectID string, results []Result) error {

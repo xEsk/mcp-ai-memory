@@ -43,7 +43,7 @@ FTS indexes:
 
 ## Ranking Behavior
 
-Search supports three modes. `precise` is the default and removes common stopwords before requiring all remaining terms. `balanced` removes common stopwords but keeps OR matching. `broad` stays close to the original expansion behavior with OR prefix matching.
+Search supports three modes. `precise` is the default and removes common stopwords before requiring all remaining terms. `balanced` removes common stopwords and keeps OR matching, but a query with four or more normalized terms returns no matches when at least half of those terms do not occur in any active memory in the requested project. `broad` stays close to the original expansion behavior with OR prefix matching and deliberately bypasses that project-vocabulary guard.
 
 `internal/retrievaltext` provides the shared Unicode-aware technical token boundaries used by search and local enrichment. Tokens retain display text and a lowercase, Latin-diacritic-folded comparison identity aligned with SQLite `unicode61` evidence. Search compiles one- and two-rune terms as escaped exact FTS terms and terms of three or more runes as escaped prefixes. Precise and balanced use the same normalized terms and differ only in `AND` versus `OR`; broad retains stopwords for wider measured recall. Empty, punctuation-only, or stopword-only normalized input returns `search.ErrInvalidQuery` instead of executing an empty FTS expression. Quotes are treated as separators, not user phrase syntax.
 
@@ -51,9 +51,11 @@ Ranking uses SQLite `bm25`. Because `memory_id` and `project_key` occupy the fir
 
 Results are ordered by rank, then `importance`, then `updated_at`.
 
+The balanced project-vocabulary guard probes term existence with the same exact/prefix expressions as the compiled query and preserves both project ownership filters. It prevents long unsupported queries from ranking memories solely through peripheral project vocabulary. `memory.search` and `memory.search.count` apply the same guard, and the probes do not record memory access. It is not semantic confidence: a passing query still relies on normal FTS5 matching and BM25 ordering.
+
 Search obtains match evidence from SQLite `highlight()` across all ten indexed fields. Normal cards project only the selected highlighted context as `match_excerpt` and its source as `match_field`, so an agent can select candidates without treating the preview as authoritative content. Debug search additionally returns ordered `matched_fields`, `snippet_field`, `snippet`, score, and an explanation derived from the same evidence.
 
-A synthetic temporary-database ranking fixture exercises the real schema and `FTS.Search` and asserts relative field ordering rather than SQLite-version-specific floating-point scores. The correction is query-time only, so it requires no schema migration, FTS rebuild, or re-enrichment.
+A versioned synthetic temporary-database corpus exercises the real schema and services across exact identifiers, conceptual questions, noisy multi-intent queries, shared vocabulary, and no-answer cases. It reports Hit@1, Recall@5, MRR@10, nDCG@5, false positives, leakage, and critical misses separately by mode. A separate ranking fixture asserts relative field ordering rather than SQLite-version-specific floating-point scores. Query-time ranking and vocabulary changes require no schema migration, FTS rebuild, or re-enrichment.
 
 ## How To Extend Existing Code
 
