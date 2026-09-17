@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"mcp-ai-memory/internal/storage"
@@ -160,6 +161,106 @@ func TestNewUsesSameAbsoluteDBPathFromDifferentWorkingDirectories(t *testing.T) 
 	if count != 1 {
 		t.Fatalf("continuity project count = %d, want 1", count)
 	}
+}
+
+func TestNewAllowsConcurrentRuntimesForCurrentDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "memory.db")
+	initialized, err := New(context.Background(), Config{DBPath: path, TraceMode: TraceModeOff})
+	if err != nil {
+		t.Fatalf("initialize application: %v", err)
+	}
+	if err := initialized.Close(); err != nil {
+		t.Fatalf("close initializing application: %v", err)
+	}
+
+	first, err := New(context.Background(), Config{DBPath: path, TraceMode: TraceModeOff})
+	if err != nil {
+		t.Fatalf("open first application: %v", err)
+	}
+	defer first.Close()
+	second, err := New(context.Background(), Config{DBPath: path, TraceMode: TraceModeOff})
+	if err != nil {
+		t.Fatalf("open second application: %v", err)
+	}
+	defer second.Close()
+
+	if err := first.Close(); err != nil {
+		t.Fatalf("close first application: %v", err)
+	}
+	var version int
+	if err := second.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
+		t.Fatalf("query through remaining application: %v", err)
+	}
+	if version != 2 {
+		t.Fatalf("schema version = %d, want 2", version)
+	}
+}
+
+func TestNewRefusesSchemaInitializationWhileAnotherRuntimeIsActive(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "memory.db")
+	activeRuntime, err := storage.AcquireRuntimeLock(path)
+	if err != nil {
+		t.Fatalf("acquire active runtime lock: %v", err)
+	}
+	defer activeRuntime.Close()
+
+	application, err := New(context.Background(), Config{DBPath: path, TraceMode: TraceModeOff})
+	if err == nil {
+		_ = application.Close()
+		t.Fatal("application initialized schema while another runtime was active")
+	}
+	if !strings.Contains(err.Error(), "stop all MCP runtimes") {
+		t.Fatalf("startup error = %q, want actionable migration conflict", err)
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("database stat error = %v, want not exist", statErr)
+	}
+}
+
+func TestConcurrentFirstStartupLeavesCurrentStore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "memory.db")
+	start := make(chan struct{})
+	results := make(chan struct {
+		application *App
+		err         error
+	}, 2)
+	var ready sync.WaitGroup
+	ready.Add(2)
+	for range 2 {
+		go func() {
+			ready.Done()
+			<-start
+			application, err := New(context.Background(), Config{DBPath: path, TraceMode: TraceModeOff})
+			results <- struct {
+				application *App
+				err         error
+			}{application: application, err: err}
+		}()
+	}
+	ready.Wait()
+	close(start)
+	successes := 0
+	for range 2 {
+		result := <-results
+		if result.err != nil {
+			if !errors.Is(result.err, storage.ErrOperationLockConflict) {
+				t.Fatalf("concurrent startup error = %v, want lock conflict", result.err)
+			}
+			continue
+		}
+		successes++
+		if err := result.application.Close(); err != nil {
+			t.Fatalf("close concurrent application: %v", err)
+		}
+	}
+	if successes == 0 {
+		t.Fatal("no concurrent startup initialized the store")
+	}
+	db, err := storage.OpenCurrentSQLite(context.Background(), path)
+	if err != nil {
+		t.Fatalf("open store after concurrent startup: %v", err)
+	}
+	defer db.Close()
 }
 
 func TestNewPreventsOfflineMaintenanceWhileServerIsRunning(t *testing.T) {

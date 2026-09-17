@@ -13,6 +13,12 @@ For process startup:
 - `cmd/memory-mcp/main.go`
 - `internal/app/app.go`
 - `internal/app/config.go`
+- `internal/app/management.go`
+
+For the terminal manager:
+
+- `internal/manage/runner.go`
+- `internal/manage/runner_test.go`
 
 For MCP tool behavior:
 
@@ -86,7 +92,7 @@ Before changing MCP schemas, inspect both `internal/mcpserver/schemas.go` and `i
 
 Before changing memory persistence, inspect `internal/storage/migrations.go`, `internal/storage/sqlite.go`, `internal/memory/repository.go`, and `internal/search/fts.go`.
 
-Before changing schema handling, snapshots, restore, locks, or FTS recovery, inspect every `internal/storage/` file above and `cmd/memory-maintenance/main.go`. Tests for this area live in `internal/storage/migrations_test.go` and use temporary databases only.
+Before changing schema handling, project cleanup, snapshots, restore, locks, or FTS recovery, inspect every `internal/storage/` file above, `internal/project/repository.go`, `internal/app/management.go`, and `cmd/memory-maintenance/main.go`. Tests for this area use temporary databases only.
 
 Before changing enrichment output, inspect `internal/enrich/model.go`, `internal/enrich/heuristic.go`, `internal/enrich/prompt.go`, and search indexing.
 

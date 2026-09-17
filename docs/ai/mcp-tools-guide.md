@@ -17,7 +17,7 @@ Public memory responses are intentionally shaped by use. `memory.search` returns
 ## Current Tools
 
 - `project.upsert`: create or update a project by key.
-- `project.list`: list projects.
+- `project.list`: list active projects. Soft-deleted projects are visible only in offline management mode.
 - `memory.upsert`: create or update a memory and refresh search metadata/index.
 - `memory.search`: search active memories inside one project and return compact candidate cards, with optional full content.
 - `memory.search.count`: count matching active memories without returning memories or recording access.
@@ -41,6 +41,7 @@ When adding a tool:
 ## Existing Conventions
 
 - Memory tools require `project`.
+- Normal project resolution excludes soft-deleted projects, so all memory tools fail with `project not found` until the project is restored offline.
 - `memory.server.info` intentionally returns only basic identity fields: `name` and `version`.
 - `memory.upsert` defaults `enrich` to true if the argument is omitted.
 - `memory.search` defaults to `precise` mode. Clients can request `balanced` or `broad` when they want wider recall.

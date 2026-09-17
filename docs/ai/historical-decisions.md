@@ -8,9 +8,9 @@ Use it when a requested change touches architecture, persistence, search, or pro
 
 ## Decisions
 
-### Single-binary local-first MCP server
+### Single primary binary with shared MCP runtimes and exclusive management
 
-The project is organized as one Go binary under `cmd/memory-mcp`. Keep this shape unless explicitly asked to introduce another runtime model.
+The project is organized around one primary Go binary under `cmd/memory-mcp`. No arguments start one stdio MCP server process per client task; compatible shared operation locks allow those processes to use the same current SQLite store through one canonical pathname or symlink aliases. Runtime, management, and mutating maintenance opening reject multiply linked database inodes because SQLite recovery artifacts are pathname-derived. `manage` starts the offline terminal manager and remains exclusive with every MCP runtime. Schema initialization and migration also require exclusive operation ownership. The low-level monitor and recovery commands remain optional companion utilities.
 
 ### Local Go module path
 
@@ -22,7 +22,7 @@ SQLite is the main database. The code uses `modernc.org/sqlite`, which keeps the
 
 ### Explicit database identity and fail-closed schema handling
 
-The server takes its required, absolute database path only from `MEMORY_DB_PATH`; it does not load `.env` files. Existing stores are classified before writes, recognized pre-ledger current stores are backed up before adoption, and unsupported schema states fail closed rather than being modified opportunistically.
+The server takes its required, absolute database path only from `MEMORY_DB_PATH`; management mode may receive an explicit absolute `--db` override. The process does not load `.env` files. Existing stores are classified before writes, recognized pre-ledger or older stores are backed up before adoption/migration, and unsupported schema states fail closed rather than being modified opportunistically.
 
 ### Offline continuity operations
 
@@ -61,6 +61,8 @@ Heuristic enrichment is the default and works offline. OpenAI-compatible enrichm
 ### Soft delete for v1
 
 `memory.delete` marks `deleted_at` and removes the FTS row. It does not physically delete memory rows.
+
+Project deletion likewise marks `projects.deleted_at`, making the project unavailable to normal MCP resolution without rewriting owned memories. The offline manager can restore it. Explicitly confirmed `clean junk` is the bounded exception that permanently purges deleted project/memory state and stale derived rows atomically.
 
 ### Enrichment separated from original memory rows
 

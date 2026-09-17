@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -35,13 +36,8 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	if err := validateTraceConfig(cfg); err != nil {
 		return nil, err
 	}
-	runtimeLock, err := storage.AcquireRuntimeLock(cfg.DBPath)
+	db, runtimeLock, err := openRuntimeStore(ctx, cfg.DBPath)
 	if err != nil {
-		return nil, err
-	}
-	db, err := storage.OpenSQLite(ctx, cfg.DBPath)
-	if err != nil {
-		_ = runtimeLock.Close()
 		return nil, err
 	}
 	clock := platform.NewClock()
@@ -58,6 +54,59 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	server := mcpserver.New(projectService, memoryService, searchService, tracer)
 
 	return &App{DB: db, Server: server, runtimeLock: runtimeLock, traceClose: traceClose}, nil
+}
+
+func openRuntimeStore(ctx context.Context, path string) (*sql.DB, *storage.OperationLock, error) {
+	runtimeLock, err := storage.AcquireRuntimeLock(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	db, err := storage.OpenCurrentSQLite(ctx, path)
+	if err == nil {
+		return db, runtimeLock, nil
+	}
+	if closeErr := runtimeLock.Close(); closeErr != nil {
+		return nil, nil, fmt.Errorf("releasing runtime lock after open failure: %w", closeErr)
+	}
+	if !errors.Is(err, storage.ErrSchemaMutationRequired) {
+		return nil, nil, err
+	}
+
+	schemaLock, err := storage.AcquireSchemaLock(path)
+	if err != nil {
+		if errors.Is(err, storage.ErrOperationLockConflict) {
+			return nil, nil, fmt.Errorf("database requires initialization or migration; stop all MCP runtimes and retry: %w", err)
+		}
+		return nil, nil, err
+	}
+	migrationDB, err := storage.OpenSQLite(ctx, path)
+	if err != nil {
+		_ = schemaLock.Close()
+		return nil, nil, err
+	}
+	if err := schemaLock.BindDatabaseIdentity(path); err != nil {
+		_ = migrationDB.Close()
+		_ = schemaLock.Close()
+		return nil, nil, err
+	}
+	if err := migrationDB.Close(); err != nil {
+		_ = schemaLock.Close()
+		return nil, nil, fmt.Errorf("closing database after schema initialization: %w", err)
+	}
+	if err := schemaLock.Close(); err != nil {
+		return nil, nil, fmt.Errorf("releasing schema lock: %w", err)
+	}
+
+	runtimeLock, err = storage.AcquireRuntimeLock(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	db, err = storage.OpenCurrentSQLite(ctx, path)
+	if err != nil {
+		_ = runtimeLock.Close()
+		return nil, nil, err
+	}
+	return db, runtimeLock, nil
 }
 
 // Close releases application resources.

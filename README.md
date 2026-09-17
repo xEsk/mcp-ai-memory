@@ -10,9 +10,25 @@ It stores memories per project, enriches them for AI retrieval, and searches the
 MEMORY_DB_PATH=/absolute/path/to/memory.db go run ./cmd/memory-mcp
 ```
 
-The process environment is the only runtime configuration authority. The database path is required and must be absolute; the binary does not load `.env` files.
+The process environment is the MCP server's runtime configuration authority. The database path is required and must be absolute; the binary does not load `.env` files.
 
-The server uses MCP over stdio. For desktop MCP clients, build the binary and adapt `examples/claude_desktop_config.json`.
+The server uses MCP over stdio. For desktop MCP clients, build the binary and adapt `examples/claude_desktop_config.json`. Multiple MCP processes may share the same current database through its canonical path or symlink aliases; SQLite serializes normal writes with a bounded busy timeout. Runtime, management, and mutating maintenance opening reject a database with multiple hard links because SQLite recovery files are pathname-dependent. If startup must initialize or migrate the schema, every other MCP process for that database must stop first.
+
+## Terminal manager
+
+The same binary includes an offline terminal interface for inspecting and managing the memory store. Stop every MCP instance using the database, then run:
+
+```bash
+MEMORY_DB_PATH=/absolute/path/to/memory.db memory-mcp manage
+```
+
+An explicit path can override the environment for this mode:
+
+```bash
+memory-mcp manage --db /absolute/path/to/memory.db
+```
+
+The manager lists projects and statistics, browses memories from compact summary to full detail, soft-deletes and restores projects, and previews permanent cleanup. Project deletion requires typing the exact project key. `Clean junk` requires typing `CLEAN` and permanently purges deleted projects, soft-deleted memories, and stale derived search/enrichment rows in one transaction. This cleanup is logical database cleanup, not forensic secure erasure.
 
 ## Trace Monitor
 
@@ -98,7 +114,7 @@ Use `memory.search` to obtain compact candidate cards, select plausible IDs, and
 
 ## Offline maintenance
 
-`inspect` is read-only and does not reserve or modify the store. Stop every MCP instance before `backup`, `restore`, or `rebuild-fts`; those operations reserve the database path exclusively. Use an explicit absolute path:
+The interactive manager is part of `memory-mcp`. The separate low-level `memory-maintenance` command remains for recovery operations. `inspect` is read-only and does not reserve or modify the store. Stop every MCP instance before `backup`, `restore`, or `rebuild-fts`; those operations reserve the database path exclusively. Use an explicit absolute path:
 
 ```bash
 go run ./cmd/memory-maintenance --operation inspect --db /absolute/path/to/memory.db

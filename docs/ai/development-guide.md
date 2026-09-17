@@ -23,6 +23,13 @@ go build ./cmd/memory-monitor
 go build ./cmd/memory-maintenance
 ```
 
+Run the primary binary's offline manager only after stopping MCP instances for the same database:
+
+```bash
+MEMORY_DB_PATH=/absolute/path/to/memory.db go run ./cmd/memory-mcp manage
+go run ./cmd/memory-mcp manage --db /absolute/path/to/memory.db
+```
+
 Make targets cover the MCP server and monitor:
 
 ```bash
@@ -38,7 +45,7 @@ make tidy
 
 Runtime config comes from environment variables:
 
-- `MEMORY_DB_PATH`: required absolute SQLite path. The binary does not load `.env` files.
+- `MEMORY_DB_PATH`: required absolute SQLite path for MCP mode and the default for management mode. `memory-mcp manage --db` can explicitly override it. The binary does not load `.env` files.
 - `MEMORY_ENRICHER`: `heuristic`, `openai-compatible`, or `openai`.
 - `MEMORY_LLM_BASE_URL`: OpenAI-compatible base URL.
 - `MEMORY_LLM_API_KEY`: provider token.
@@ -110,6 +117,8 @@ When adding storage fields:
 3. Update repository scan/write code.
 4. Update FTS indexing if the field affects retrieval.
 5. Add or update integration tests with temporary SQLite.
+
+Schema v2 adds `projects.deleted_at` and `idx_projects_deleted`. Recognized v1 stores are backed up and migrated transactionally; classification continues to reject unknown shapes and mismatched ledgers.
 
 When adding a new read path that returns memories:
 

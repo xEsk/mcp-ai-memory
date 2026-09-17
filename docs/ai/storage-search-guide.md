@@ -10,9 +10,9 @@ Read this before changing migrations, repositories, search ranking, or deletion 
 
 SQLite is opened in `internal/storage/sqlite.go` using `modernc.org/sqlite`. `OpenSQLite` classifies an existing database read-only before it allows writes. The current schema is applied through a checksummed `schema_migrations` ledger; recognized current unversioned stores are adopted, while unknown, partial, future, version-gapped, or checksum-drifted stores fail closed.
 
-The main tables are `projects`, `memories`, `memory_enrichments`, and virtual table `memory_fts`.
+The main tables are `projects`, `memories`, `memory_enrichments`, and virtual table `memory_fts`. Projects and memories have independent `deleted_at` fields. A deleted project is an inactive ownership boundary even when some of its memories remain individually active.
 
-Memory upsert writes original memory data to `memories`, writes derived retrieval metadata to `memory_enrichments`, and replaces the FTS row in a single transaction. Soft delete sets `deleted_at` and removes the FTS row.
+Memory upsert writes original memory data to `memories`, writes derived retrieval metadata to `memory_enrichments`, and replaces the FTS row in a single transaction. Memory soft delete sets `memories.deleted_at` and removes the FTS row. Project soft delete sets `projects.deleted_at`; normal project resolution prevents every memory operation for that project while preserving its data for restoration.
 
 Returned memories track aggregate retrieval/exposure history internally with `access_count` and `last_accessed_at`. Full public memory output projects these as `retrieval_count` and `last_retrieved_at`; compact search cards omit them. Search, get, list, and debug search still increment the fields for active memories they return. Suggestion performs its precise and optional balanced searches without recording, deduplicates the final public candidates, and records each final ID once. `memory.search.count` returns only the match count and must not increment access metrics.
 
@@ -79,7 +79,7 @@ When adding searchable metadata:
 
 ## Offline Maintenance
 
-Read this section before operating on any existing database. `inspect` is a zero-write classification operation and does not acquire the operation lock. Stop all MCP instances before `backup`, `restore`, or `rebuild-fts`; those commands use the same exclusive `<db>.operation.lock` reservation as the server.
+Read this section before operating on any existing database. Normal MCP runtimes hold compatible shared reservations when the schema is already current; SQLite serializes their writes with the configured bounded busy timeout. Symlinks resolve to the canonical database path, while a database with multiple hard links is rejected for every runtime, management, or mutating maintenance open because rollback recovery files are pathname-derived. Schema initialization or migration requires an exclusive reservation and fails without writes while another runtime is active. `inspect` is a zero-write classification operation and does not acquire the operation lock. Stop all MCP instances before `backup`, `restore`, or `rebuild-fts`; those commands require an exclusive `<db>.operation.lock` reservation.
 
 All commands require absolute paths and write status only to stderr:
 
@@ -96,6 +96,8 @@ go run ./cmd/memory-maintenance --operation rebuild-fts --db /absolute/path/to/m
 - `rebuild-fts` requires an existing recognized current store, opens it without runtime migration, and replaces only `memory_fts` rows from active authoritative records in one transaction.
 
 Do not use normal MCP startup to run offline maintenance or validate a backup: startup is migration-capable, whereas maintenance opening is deliberately side-effect-free except for the named operation. Never run automated commands against `data/memory.db`; use a new path under `t.TempDir()` and the guard described in `development-guide.md`.
+
+`memory-mcp manage` is also an exclusive offline operation, but it uses the normal classified migration path before opening its interface. Its explicitly confirmed cleanup transaction purges soft-deleted projects and their owned data, soft-deleted memories in active projects, orphaned enrichments, and FTS rows that do not map to an active memory in an active project. It checks that no eligible rows remain before commit. This does not securely erase bytes from SQLite free pages, WAL files, backups, or storage media.
 
 ## Common Mistakes To Avoid
 

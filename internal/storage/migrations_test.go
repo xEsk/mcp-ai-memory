@@ -22,13 +22,76 @@ func TestOpenSQLiteBootstrapsVersionedSchema(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	var version int
-	var name, checksum string
-	if err := db.QueryRowContext(ctx, `SELECT version, name, checksum FROM schema_migrations`).Scan(&version, &name, &checksum); err != nil {
+	var count, version int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*), MAX(version) FROM schema_migrations`).Scan(&count, &version); err != nil {
 		t.Fatalf("read migration ledger: %v", err)
 	}
-	if version != 1 || name != "initial_schema" || checksum != migrationChecksum(migrations[0]) {
-		t.Fatalf("migration ledger = (%d, %q, %q), want initial migration", version, name, checksum)
+	if count != 2 || version != 2 {
+		t.Fatalf("migration ledger = (%d entries, version %d), want 2 entries through version 2", count, version)
+	}
+}
+
+func TestOpenSQLiteMigratesVersionOneProjectData(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "memory.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open v1 fixture: %v", err)
+	}
+	for _, statement := range versionOneSchemaStatements() {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			t.Fatalf("create v1 fixture: %v", err)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, 'now')`, migrations[0].version, migrations[0].name, migrationChecksum(migrations[0])); err != nil {
+		t.Fatalf("seed v1 ledger: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO projects (id, key, name, created_at, updated_at) VALUES ('project', 'kept', 'Kept', 'now', 'now')`); err != nil {
+		t.Fatalf("seed v1 project: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO memories (id, project_id, type, title, content, created_at, updated_at) VALUES ('memory', 'project', 'implementation', 'Kept', 'content', 'now', 'now')`); err != nil {
+		t.Fatalf("seed v1 memory: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close v1 fixture: %v", err)
+	}
+
+	migrated, err := OpenSQLite(ctx, path)
+	if err != nil {
+		t.Fatalf("migrate v1 store: %v", err)
+	}
+	defer migrated.Close()
+	var projectCount, memoryCount, version int
+	if err := migrated.QueryRowContext(ctx, `SELECT COUNT(*) FROM projects WHERE key = 'kept' AND deleted_at IS NULL`).Scan(&projectCount); err != nil {
+		t.Fatalf("read migrated project: %v", err)
+	}
+	if err := migrated.QueryRowContext(ctx, `SELECT COUNT(*) FROM memories WHERE id = 'memory'`).Scan(&memoryCount); err != nil {
+		t.Fatalf("read migrated memory: %v", err)
+	}
+	if err := migrated.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
+		t.Fatalf("read migrated version: %v", err)
+	}
+	if projectCount != 1 || memoryCount != 1 || version != 2 {
+		t.Fatalf("migrated state = project %d, memory %d, version %d", projectCount, memoryCount, version)
+	}
+	state, err := classifyDatabase(ctx, migrated)
+	if err != nil {
+		t.Fatalf("classify migrated database: %v", err)
+	}
+	if state != schemaCurrentVersioned {
+		t.Fatalf("migrated schema state = %q, want %q", state, schemaCurrentVersioned)
+	}
+}
+
+func versionOneSchemaStatements() []string {
+	return []string{
+		`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)`,
+		`CREATE TABLE projects (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+		`CREATE TABLE memories (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE RESTRICT, type TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL, importance INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL DEFAULT '', access_count INTEGER NOT NULL DEFAULT 0, last_accessed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT)`,
+		`CREATE TABLE memory_enrichments (memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE, summary TEXT NOT NULL DEFAULT '', short_summary TEXT NOT NULL DEFAULT '', keywords_json TEXT NOT NULL DEFAULT '[]', tags_json TEXT NOT NULL DEFAULT '[]', entities_json TEXT NOT NULL DEFAULT '[]', aliases_json TEXT NOT NULL DEFAULT '[]', search_phrases_json TEXT NOT NULL DEFAULT '[]', updated_at TEXT NOT NULL)`,
+		`CREATE INDEX idx_memories_project_deleted ON memories(project_id, deleted_at)`,
+		`CREATE INDEX idx_memories_project_type ON memories(project_id, type)`,
+		`CREATE VIRTUAL TABLE memory_fts USING fts5(memory_id UNINDEXED, project_key UNINDEXED, type, title, summary, short_summary, keywords, tags, entities, aliases, search_phrases, content, tokenize='unicode61')`,
 	}
 }
 
@@ -235,16 +298,147 @@ func TestOpenSQLiteRecoversFromStaleMigrationLockFile(t *testing.T) {
 
 func TestMaintenanceLockRejectsActiveRuntime(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "memory.db")
-	runtimeLock, err := AcquireRuntimeLock(path)
+	firstRuntime, err := AcquireRuntimeLock(path)
 	if err != nil {
-		t.Fatalf("acquire runtime lock: %v", err)
+		t.Fatalf("acquire first runtime lock: %v", err)
 	}
-	t.Cleanup(func() { _ = runtimeLock.Close() })
+	t.Cleanup(func() { _ = firstRuntime.Close() })
+	secondRuntime, err := AcquireRuntimeLock(path)
+	if err != nil {
+		t.Fatalf("acquire second runtime lock: %v", err)
+	}
+	t.Cleanup(func() { _ = secondRuntime.Close() })
 
 	maintenanceLock, err := AcquireMaintenanceLock(path)
 	if err == nil {
 		_ = maintenanceLock.Close()
 		t.Fatal("maintenance lock succeeded while runtime was active")
+	}
+	if !errors.Is(err, ErrOperationLockConflict) {
+		t.Fatalf("maintenance lock error = %v, want ErrOperationLockConflict", err)
+	}
+	if schemaLock, err := AcquireSchemaLock(path); err == nil {
+		_ = schemaLock.Close()
+		t.Fatal("schema lock succeeded while runtime was active")
+	} else if !errors.Is(err, ErrOperationLockConflict) {
+		t.Fatalf("schema lock error = %v, want ErrOperationLockConflict", err)
+	}
+}
+
+func TestRuntimeLockRejectsActiveMaintenance(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "memory.db")
+	maintenanceLock, err := AcquireMaintenanceLock(path)
+	if err != nil {
+		t.Fatalf("acquire maintenance lock: %v", err)
+	}
+	defer maintenanceLock.Close()
+	if runtimeLock, err := AcquireRuntimeLock(path); err == nil {
+		_ = runtimeLock.Close()
+		t.Fatal("runtime lock succeeded while maintenance was active")
+	} else if !errors.Is(err, ErrOperationLockConflict) {
+		t.Fatalf("runtime lock error = %v, want ErrOperationLockConflict", err)
+	}
+}
+
+func TestRuntimeLockRejectsHardlinkedDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "memory.db")
+	db, err := OpenSQLite(context.Background(), path)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+	alias := filepath.Join(t.TempDir(), "hardlink.db")
+	if err := os.Link(path, alias); err != nil {
+		t.Fatalf("create database hardlink: %v", err)
+	}
+	if lock, err := AcquireRuntimeLock(path); err == nil {
+		_ = lock.Close()
+		t.Fatal("runtime lock succeeded for hardlinked database")
+	} else if !strings.Contains(err.Error(), "multiple hard links") {
+		t.Fatalf("runtime lock error = %q, want hardlink rejection", err)
+	}
+	lock, err := AcquireMaintenanceLock(alias)
+	if err != nil {
+		t.Fatalf("maintenance lock through hardlink: %v", err)
+	}
+	if err := lock.Close(); err != nil {
+		t.Fatalf("close maintenance lock: %v", err)
+	}
+	if db, err := OpenSQLite(context.Background(), alias); err == nil {
+		_ = db.Close()
+		t.Fatal("migration-capable open succeeded through hardlink")
+	} else if !errors.Is(err, ErrMultipleHardLinks) {
+		t.Fatalf("migration-capable open error = %v, want ErrMultipleHardLinks", err)
+	}
+	if _, err := BackupDatabase(context.Background(), alias); !errors.Is(err, ErrMultipleHardLinks) {
+		t.Fatalf("backup error = %v, want ErrMultipleHardLinks", err)
+	}
+}
+
+func TestOpenCurrentSQLiteRequiresExclusiveInitialization(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "memory.db")
+	db, err := OpenCurrentSQLite(context.Background(), path)
+	if err == nil {
+		_ = db.Close()
+		t.Fatal("current-only open initialized an empty store")
+	}
+	if !errors.Is(err, ErrSchemaMutationRequired) {
+		t.Fatalf("current-only open error = %v, want ErrSchemaMutationRequired", err)
+	}
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("database stat error = %v, want not exist", statErr)
+	}
+}
+
+func TestMaintenanceLockRejectsSymlinkAndHardlinkAliases(t *testing.T) {
+	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "custom-tmp"))
+	path := filepath.Join(t.TempDir(), "memory.db")
+	db, err := OpenSQLite(context.Background(), path)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close sqlite: %v", err)
+	}
+	runtimeLock, err := AcquireRuntimeLock(path)
+	if err != nil {
+		t.Fatalf("acquire runtime lock: %v", err)
+	}
+	defer runtimeLock.Close()
+	aliases := map[string]string{
+		"symlink":  filepath.Join(t.TempDir(), "alias.db"),
+		"hardlink": filepath.Join(t.TempDir(), "hard.db"),
+	}
+	if err := os.Symlink(path, aliases["symlink"]); err != nil {
+		t.Fatalf("create symlink alias: %v", err)
+	}
+	if err := os.Link(path, aliases["hardlink"]); err != nil {
+		t.Fatalf("create hardlink alias: %v", err)
+	}
+	for name, alias := range aliases {
+		t.Run(name, func(t *testing.T) {
+			lock, err := AcquireMaintenanceLock(alias)
+			if err == nil {
+				_ = lock.Close()
+				t.Fatal("maintenance lock succeeded through database alias")
+			}
+		})
+	}
+	if err := runtimeLock.Close(); err != nil {
+		t.Fatalf("close runtime lock: %v", err)
+	}
+	for name, alias := range aliases {
+		t.Run(name+"-released", func(t *testing.T) {
+			lock, err := AcquireMaintenanceLock(alias)
+			if err != nil {
+				t.Fatalf("acquire maintenance lock after runtime close: %v", err)
+			}
+			if err := lock.Close(); err != nil {
+				t.Fatalf("close maintenance lock: %v", err)
+			}
+		})
 	}
 }
 
@@ -421,10 +615,13 @@ func TestRebuildFTSRestoresOnlyActiveAuthoritativeMemories(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	for _, statement := range []string{
 		`INSERT INTO projects (id, key, name, created_at, updated_at) VALUES ('project', 'project-key', 'Project', 'now', 'now')`,
+		`INSERT INTO projects (id, key, name, created_at, updated_at, deleted_at) VALUES ('deleted-project', 'deleted-project', 'Deleted Project', 'now', 'now', 'now')`,
 		`INSERT INTO memories (id, project_id, type, title, content, created_at, updated_at) VALUES ('active', 'project', 'implementation', 'Active', 'active content', 'now', 'now')`,
 		`INSERT INTO memories (id, project_id, type, title, content, created_at, updated_at, deleted_at) VALUES ('deleted', 'project', 'implementation', 'Deleted', 'deleted content', 'now', 'now', 'now')`,
+		`INSERT INTO memories (id, project_id, type, title, content, created_at, updated_at) VALUES ('hidden', 'deleted-project', 'implementation', 'Hidden', 'hidden content', 'now', 'now')`,
 		`INSERT INTO memory_enrichments (memory_id, updated_at) VALUES ('active', 'now')`,
 		`INSERT INTO memory_enrichments (memory_id, updated_at) VALUES ('deleted', 'now')`,
+		`INSERT INTO memory_enrichments (memory_id, updated_at) VALUES ('hidden', 'now')`,
 		`INSERT INTO memory_fts (memory_id, project_key, type, title, summary, short_summary, keywords, tags, entities, aliases, search_phrases, content) VALUES ('orphan', 'wrong', '', '', '', '', '', '', '', '', '', '')`,
 	} {
 		if _, err := db.ExecContext(ctx, statement); err != nil {

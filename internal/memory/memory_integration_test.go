@@ -2,6 +2,7 @@ package memory_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -131,6 +132,37 @@ func TestMemoryLifecycle_SearchIsProjectScoped(t *testing.T) {
 	}
 	if len(afterDelete) != 0 {
 		t.Fatalf("deleted memory returned in search: %d results", len(afterDelete))
+	}
+}
+
+func TestMemoryOperationsRejectSoftDeletedProject(t *testing.T) {
+	ctx := context.Background()
+	db, err := storage.OpenSQLite(ctx, filepath.Join(t.TempDir(), "memory.db"))
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	clock := platform.NewClock()
+	projects := project.NewService(project.NewRepository(db), clock)
+	memories := memory.NewService(memory.NewRepository(db), projects, enrich.NewLocalHeuristicEnricher(), clock)
+	if _, err := projects.Upsert(ctx, project.UpsertInput{Key: "deleted", Name: "Deleted"}); err != nil {
+		t.Fatalf("upsert project: %v", err)
+	}
+	stored, err := memories.Upsert(ctx, memory.UpsertInput{Project: "deleted", Title: "Hidden", Content: "Hidden content"})
+	if err != nil {
+		t.Fatalf("upsert memory: %v", err)
+	}
+	if err := projects.SoftDelete(ctx, "deleted"); err != nil {
+		t.Fatalf("soft delete project: %v", err)
+	}
+	if _, err := memories.List(ctx, memory.ListInput{Project: "deleted"}); !errors.Is(err, project.ErrProjectNotFound) {
+		t.Fatalf("list deleted project error = %v, want ErrProjectNotFound", err)
+	}
+	if _, err := memories.Get(ctx, "deleted", stored.ID); !errors.Is(err, project.ErrProjectNotFound) {
+		t.Fatalf("get deleted project error = %v, want ErrProjectNotFound", err)
+	}
+	if _, err := memories.Upsert(ctx, memory.UpsertInput{Project: "deleted", Title: "New", Content: "New content"}); !errors.Is(err, project.ErrProjectNotFound) {
+		t.Fatalf("upsert deleted project error = %v, want ErrProjectNotFound", err)
 	}
 }
 

@@ -12,7 +12,7 @@ Every memory operation must be project-scoped. `project` is required at the MCP 
 
 Search must never return memories from another project. Keep both `project_key` and `project_id` filters in the search path unless replacing them with an equally strict design.
 
-Soft delete is the v1 deletion behavior. Do not physically delete memories unless the user explicitly changes the product requirement.
+Normal project and memory deletion is soft deletion. Physical deletion is allowed only through the explicitly confirmed, offline `clean junk` flow, which must delete its declared authoritative and derived scope atomically.
 
 Original `content` must always be preserved. Enrichment fields can improve retrieval but must not replace source content.
 
@@ -24,7 +24,7 @@ The default path must work locally without API keys. The heuristic enricher is t
 
 The server speaks MCP over stdio. Do not write normal logs to stdout because stdout is protocol transport.
 
-`MEMORY_DB_PATH` must be explicit and absolute. Never run backup, restore, migration, or rebuild while its MCP server can be running; the operation lock enforces this exclusion. Read-only inspection is the sole zero-write exception and must not create or reserve the store.
+`MEMORY_DB_PATH` must be explicit and absolute in MCP mode; management may use an explicit absolute `--db` override. Normal MCP runtimes may share an already-current store through its canonical path or symlink aliases. Reject every mutating database open, including runtime and management, when the database has multiple hard links; SQLite journal recovery depends on one authoritative pathname. Never initialize or migrate the schema, run management, backup, restore, or rebuild while another MCP runtime can be running; shared runtime and exclusive operation locks enforce this boundary. Read-only inspection is the sole zero-write exception and must not create or reserve the store.
 
 Existing stores must be classified before writes. Unknown, partial, future, version-gapped, or checksum-drifted schemas must fail closed. A recognized pre-ledger store is backed up before startup adopts it.
 

@@ -10,6 +10,8 @@ Read this before changing memory writes, retrieval semantics, response shaping, 
 
 Every memory operation begins by resolving a project key to its internal `project_id`. Reads must remain constrained by that ID; FTS search additionally filters the duplicated `project_key`.
 
+Project resolution includes `projects.deleted_at IS NULL`. Soft-deleting a project therefore hides all of its memories from MCP get, list, search, suggestion, delete, and upsert behavior without rewriting each memory row. The offline manager can restore the project until permanent cleanup.
+
 ## Write: `memory.upsert`
 
 - `project`, `title`, and `content` are required. The service trims title and content, normalizes type, and clamps importance to `1..5`.
@@ -43,6 +45,8 @@ Card descriptions reuse stored `short_summary`, with a deterministic source-cont
 `memory.suggest` is non-mutating with respect to stored memory content. It searches `input` plus optional context in `precise` mode without recording exposure, evaluates candidate quality using the compiled query terms and internal source/enrichment evidence, and retries with `balanced` whenever precise has no safe recommendation. Its internal no-recording candidate search deliberately bypasses the public balanced project-vocabulary guard so the existing weak/possible/strong evaluator retains authority over suggestion candidates. It merges and deduplicates the final set, preserves conservative ambiguity abstention, then records only the final public candidate IDs once. Internal content may support quality evaluation but is removed by the public candidate response projection.
 
 `memory.delete` soft-deletes an active same-project row and removes its FTS document in one transaction. Source and enrichment rows remain. Upserting the same ID can restore the row; get, list, and search must otherwise exclude it.
+
+Offline `clean junk` is the only normal physical-deletion path. After explicit confirmation it removes soft-deleted projects and every owned memory, soft-deleted memories in active projects, their enrichment rows, and stale FTS/enrichment rows in one transaction. It is irreversible through the application and is not a secure-erasure guarantee.
 
 ## Data Responsibilities
 

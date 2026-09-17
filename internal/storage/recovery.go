@@ -32,12 +32,15 @@ func RebuildFTS(ctx context.Context, db *sql.DB) error {
 		FROM memories m
 		JOIN projects p ON p.id = m.project_id
 		LEFT JOIN memory_enrichments e ON e.memory_id = m.id
-		WHERE m.deleted_at IS NULL
+		WHERE m.deleted_at IS NULL AND p.deleted_at IS NULL
 	`); err != nil {
 		return fmt.Errorf("rebuilding FTS index: %w", err)
 	}
 	var activeCount, ftsCount int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM memories WHERE deleted_at IS NULL`).Scan(&activeCount); err != nil {
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM memories m JOIN projects p ON p.id = m.project_id
+		WHERE m.deleted_at IS NULL AND p.deleted_at IS NULL
+	`).Scan(&activeCount); err != nil {
 		return fmt.Errorf("counting active memories: %w", err)
 	}
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM memory_fts`).Scan(&ftsCount); err != nil {

@@ -27,6 +27,13 @@ Use this skill to make project knowledge durable across sessions. The MCP is not
 - Use `memory.search.debug` only for troubleshooting retrieval quality; normal memory use should rely on slim `memory.search` responses and `memory.get` for full content.
 - When Project Memory is called through `functions.exec`, never pass the complete `CallToolResult` to `text()` or serialize it equivalently. Select exactly one representation: emit error text from `content` when `isError` is true; otherwise prefer non-null `structuredContent` and fall back to text from `content`. Direct Codex MCP calls already perform this projection.
 
+## Runtime and Maintenance Operations
+
+- Multiple Codex tasks may run their own `stdio` Project Memory servers concurrently against the same current database. Do not treat another active runtime as an error or stop it merely to start a new task.
+- Schema initialization, migrations, backup, restore, rebuild, and management operations require exclusive database access. If one reports that the database is active, stop every Project Memory runtime using that database, perform the operation, and then start the runtimes again.
+- Canonical paths and symbolic links to the same database are supported and coordinate through the same lock identity.
+- Do not use a hard link for `memory.db`. Project Memory rejects multiply linked database inodes because SQLite journal files are derived from the opened pathname and cannot be coordinated safely across hardlink aliases.
+
 ## Start-of-Task Workflow
 
 1. Determine the project key. If `AGENTS.md` has a Project Memory MCP section, reuse that exact key. Otherwise derive a stable key from the repo folder or product slug.

@@ -57,3 +57,52 @@ func (s *Service) MustGetByKey(ctx context.Context, key string) (*Project, error
 func (s *Service) List(ctx context.Context) ([]Project, error) {
 	return s.repo.List(ctx)
 }
+
+// ListAll returns active and deleted projects for offline management.
+func (s *Service) ListAll(ctx context.Context) ([]Project, error) {
+	return s.repo.ListAll(ctx)
+}
+
+// Stats returns aggregate data for an active or deleted project.
+func (s *Service) Stats(ctx context.Context, key string) (Stats, error) {
+	p, err := s.repo.GetAnyByKey(ctx, strings.TrimSpace(key))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Stats{}, ErrProjectNotFound
+		}
+		return Stats{}, err
+	}
+	return s.repo.Stats(ctx, p.ID)
+}
+
+// SoftDelete hides a project and preserves its data for restoration.
+func (s *Service) SoftDelete(ctx context.Context, key string) error {
+	if err := s.repo.SoftDelete(ctx, strings.TrimSpace(key), s.clock.Now()); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrProjectNotFound
+		}
+		return err
+	}
+	return nil
+}
+
+// Restore makes a soft-deleted project active again.
+func (s *Service) Restore(ctx context.Context, key string) error {
+	if err := s.repo.Restore(ctx, strings.TrimSpace(key), s.clock.Now()); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrProjectNotFound
+		}
+		return err
+	}
+	return nil
+}
+
+// PreviewCleanup reports what permanent cleanup would remove.
+func (s *Service) PreviewCleanup(ctx context.Context) (CleanupStats, error) {
+	return s.repo.PreviewCleanup(ctx)
+}
+
+// Cleanup permanently removes previously deleted data and stale derived rows.
+func (s *Service) Cleanup(ctx context.Context) (CleanupStats, error) {
+	return s.repo.Cleanup(ctx)
+}

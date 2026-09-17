@@ -136,6 +136,20 @@ func (s *Service) Get(ctx context.Context, projectKey, id string) (*Memory, erro
 	return m, nil
 }
 
+// GetForManagement returns one active memory without changing MCP retrieval metrics.
+func (s *Service) GetForManagement(ctx context.Context, projectKey, id string) (*Memory, error) {
+	p, err := s.projects.MustGetByKey(ctx, projectKey)
+	if err != nil {
+		return nil, err
+	}
+	m, err := s.repo.GetByID(ctx, p.ID, strings.TrimSpace(id))
+	if err != nil {
+		return nil, err
+	}
+	m.ProjectKey = p.Key
+	return m, nil
+}
+
 // List returns active memories for a project.
 func (s *Service) List(ctx context.Context, input ListInput) ([]Memory, error) {
 	p, err := s.projects.MustGetByKey(ctx, input.Project)
@@ -159,6 +173,25 @@ func (s *Service) List(ctx context.Context, input ListInput) ([]Memory, error) {
 	}
 	if err := s.repo.RecordAccesses(ctx, p.ID, ids, now); err != nil {
 		return nil, err
+	}
+	return items, nil
+}
+
+// ListForManagement returns active memories without changing MCP retrieval metrics.
+func (s *Service) ListForManagement(ctx context.Context, input ListInput) ([]Memory, error) {
+	p, err := s.projects.MustGetByKey(ctx, input.Project)
+	if err != nil {
+		return nil, err
+	}
+	if input.Type != "" && !IsValidType(input.Type) {
+		return nil, fmt.Errorf("%w: invalid memory type %q", ErrInvalidInput, input.Type)
+	}
+	items, err := s.repo.List(ctx, input, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i].ProjectKey = p.Key
 	}
 	return items, nil
 }

@@ -20,12 +20,20 @@ type migration struct {
 	apply   func(context.Context, *sql.Tx) error
 }
 
-var migrations = []migration{{
-	version: 1,
-	name:    "initial_schema",
-	payload: "projects|memories|memory_enrichments|memory_fts|idx_memories_project_deleted|idx_memories_project_type",
-	apply:   applyInitialSchema,
-}}
+var migrations = []migration{
+	{
+		version: 1,
+		name:    "initial_schema",
+		payload: "projects|memories|memory_enrichments|memory_fts|idx_memories_project_deleted|idx_memories_project_type",
+		apply:   applyInitialSchema,
+	},
+	{
+		version: 2,
+		name:    "project_soft_delete",
+		payload: "projects.deleted_at|idx_projects_deleted",
+		apply:   applyProjectSoftDelete,
+	},
+}
 
 // ApplyMigrations applies the current schema to a classified writable database.
 func ApplyMigrations(ctx context.Context, db *sql.DB) error {
@@ -39,9 +47,19 @@ func ApplyMigrations(ctx context.Context, db *sql.DB) error {
 func applyClassifiedMigrations(ctx context.Context, db *sql.DB, state schemaState) error {
 	switch state {
 	case schemaEmpty:
-		return applyMigration(ctx, db, migrations[0])
+		if err := applyInitialMigration(ctx, db); err != nil {
+			return err
+		}
+		return applyPendingMigrations(ctx, db, 1)
+	case schemaLegacyUnversioned:
+		if err := adoptSchema(ctx, db, 1); err != nil {
+			return err
+		}
+		return applyPendingMigrations(ctx, db, 1)
 	case schemaCurrentUnversioned:
-		return adoptCurrentSchema(ctx, db)
+		return adoptSchema(ctx, db, len(migrations))
+	case schemaVersionedNeedsMigration:
+		return applyPendingMigrations(ctx, db, 1)
 	case schemaCurrentVersioned:
 		return nil
 	default:
@@ -49,7 +67,8 @@ func applyClassifiedMigrations(ctx context.Context, db *sql.DB, state schemaStat
 	}
 }
 
-func applyMigration(ctx context.Context, db *sql.DB, migration migration) error {
+func applyInitialMigration(ctx context.Context, db *sql.DB) error {
+	migration := migrations[0]
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("starting migration %d transaction: %w", migration.version, err)
@@ -75,7 +94,28 @@ func applyMigration(ctx context.Context, db *sql.DB, migration migration) error 
 	return nil
 }
 
-func adoptCurrentSchema(ctx context.Context, db *sql.DB) error {
+func applyPendingMigrations(ctx context.Context, db *sql.DB, applied int) error {
+	for _, migration := range migrations[applied:] {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("starting migration %d transaction: %w", migration.version, err)
+		}
+		if err := migration.apply(ctx, tx); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("applying migration %d: %w", migration.version, err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)`, migration.version, migration.name, migrationChecksum(migration), time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("recording migration %d: %w", migration.version, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("committing migration %d: %w", migration.version, err)
+		}
+	}
+	return nil
+}
+
+func adoptSchema(ctx context.Context, db *sql.DB, through int) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("starting schema adoption transaction: %w", err)
@@ -89,12 +129,25 @@ func adoptCurrentSchema(ctx context.Context, db *sql.DB) error {
 	)`); err != nil {
 		return fmt.Errorf("creating migration ledger: %w", err)
 	}
-	migration := migrations[0]
-	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)`, migration.version, migration.name, migrationChecksum(migration), time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-		return fmt.Errorf("recording schema adoption: %w", err)
+	for _, migration := range migrations[:through] {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)`, migration.version, migration.name, migrationChecksum(migration), time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+			return fmt.Errorf("recording schema adoption: %w", err)
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing schema adoption: %w", err)
+	}
+	return nil
+}
+
+func applyProjectSoftDelete(ctx context.Context, tx *sql.Tx) error {
+	for _, statement := range []string{
+		`ALTER TABLE projects ADD COLUMN deleted_at TEXT`,
+		`CREATE INDEX idx_projects_deleted ON projects(deleted_at, key)`,
+	} {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -124,11 +177,13 @@ func migrationChecksum(migration migration) string {
 type schemaState string
 
 const (
-	schemaEmpty              schemaState = "empty"
-	schemaCurrentUnversioned schemaState = "current unversioned v1"
-	schemaCurrentVersioned   schemaState = "current versioned v1"
-	schemaUnknown            schemaState = "unknown or partial"
-	schemaFuture             schemaState = "newer versioned schema"
+	schemaEmpty                   schemaState = "empty"
+	schemaLegacyUnversioned       schemaState = "recognized unversioned v1"
+	schemaCurrentUnversioned      schemaState = "current unversioned v2"
+	schemaVersionedNeedsMigration schemaState = "recognized versioned v1"
+	schemaCurrentVersioned        schemaState = "current versioned v2"
+	schemaUnknown                 schemaState = "unknown or partial"
+	schemaFuture                  schemaState = "newer versioned schema"
 )
 
 func classifyDatabase(ctx context.Context, db *sql.DB) (schemaState, error) {
@@ -140,27 +195,47 @@ func classifyDatabase(ctx context.Context, db *sql.DB) (schemaState, error) {
 		return schemaEmpty, nil
 	}
 	_, versioned := tables["schema_migrations"]
-	if !hasExpectedObjects(tables, versioned) {
+	schemaVersion := 0
+	for _, candidate := range []int{len(migrations), 1} {
+		if !hasExpectedObjects(tables, versioned, candidate) {
+			continue
+		}
+		valid, err := hasColumnSignatures(ctx, db, versioned, candidate)
+		if err != nil {
+			return schemaUnknown, err
+		}
+		if !valid {
+			continue
+		}
+		valid, err = hasSchemaDefinitions(ctx, db, versioned, candidate)
+		if err != nil {
+			return schemaUnknown, err
+		}
+		if valid {
+			schemaVersion = candidate
+			break
+		}
+	}
+	if schemaVersion == 0 {
 		return schemaUnknown, nil
 	}
-	valid, err := hasCurrentColumnSignatures(ctx, db, versioned)
-	if err != nil {
-		return schemaUnknown, err
+	if !versioned {
+		if schemaVersion == len(migrations) {
+			return schemaCurrentUnversioned, nil
+		}
+		return schemaLegacyUnversioned, nil
 	}
-	if !valid {
+	ledgerVersion, state, err := classifyLedger(ctx, db)
+	if err != nil || state == schemaUnknown || state == schemaFuture {
+		return state, err
+	}
+	if ledgerVersion != schemaVersion {
 		return schemaUnknown, nil
 	}
-	valid, err = hasCurrentSchemaDefinitions(ctx, db, versioned)
-	if err != nil {
-		return schemaUnknown, err
+	if ledgerVersion < len(migrations) {
+		return schemaVersionedNeedsMigration, nil
 	}
-	if !valid {
-		return schemaUnknown, nil
-	}
-	if _, ok := tables["schema_migrations"]; !ok {
-		return schemaCurrentUnversioned, nil
-	}
-	return classifyLedger(ctx, db)
+	return schemaCurrentVersioned, nil
 }
 
 func tableNames(ctx context.Context, db *sql.DB) (map[string]struct{}, error) {
@@ -180,13 +255,16 @@ func tableNames(ctx context.Context, db *sql.DB) (map[string]struct{}, error) {
 	return tables, rows.Err()
 }
 
-func hasExpectedObjects(tables map[string]struct{}, versioned bool) bool {
+func hasExpectedObjects(tables map[string]struct{}, versioned bool, schemaVersion int) bool {
 	expected := []string{
 		"projects", "memories", "memory_enrichments", "idx_memories_project_deleted", "idx_memories_project_type", "memory_fts",
 		"memory_fts_config", "memory_fts_content", "memory_fts_data", "memory_fts_docsize", "memory_fts_idx",
 	}
 	if versioned {
 		expected = append(expected, "schema_migrations")
+	}
+	if schemaVersion >= 2 {
+		expected = append(expected, "idx_projects_deleted")
 	}
 	if len(tables) != len(expected) {
 		return false
@@ -204,7 +282,7 @@ type schemaColumn struct {
 	notNull, primaryKey            int
 }
 
-func hasCurrentColumnSignatures(ctx context.Context, db *sql.DB, versioned bool) (bool, error) {
+func hasColumnSignatures(ctx context.Context, db *sql.DB, versioned bool, schemaVersion int) (bool, error) {
 	expected := map[string][]schemaColumn{
 		"projects": {
 			{"id", "TEXT", "", 0, 1}, {"key", "TEXT", "", 1, 0}, {"name", "TEXT", "", 1, 0},
@@ -225,6 +303,9 @@ func hasCurrentColumnSignatures(ctx context.Context, db *sql.DB, versioned bool)
 			{"summary", "", "", 0, 0}, {"short_summary", "", "", 0, 0}, {"keywords", "", "", 0, 0}, {"tags", "", "", 0, 0},
 			{"entities", "", "", 0, 0}, {"aliases", "", "", 0, 0}, {"search_phrases", "", "", 0, 0}, {"content", "", "", 0, 0},
 		},
+	}
+	if schemaVersion >= 2 {
+		expected["projects"] = append(expected["projects"], schemaColumn{"deleted_at", "TEXT", "", 0, 0})
 	}
 	if versioned {
 		expected["schema_migrations"] = []schemaColumn{
@@ -247,6 +328,10 @@ func hasCurrentColumnSignatures(ctx context.Context, db *sql.DB, versioned bool)
 			}
 			got = append(got, schemaColumn{name: name, columnType: columnType, defaultValue: defaultValue.String, notNull: notNull, primaryKey: primaryKey})
 		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return false, fmt.Errorf("iterating %s column signature: %w", table, err)
+		}
 		if err := rows.Close(); err != nil {
 			return false, fmt.Errorf("closing %s column signature: %w", table, err)
 		}
@@ -262,7 +347,7 @@ func hasCurrentColumnSignatures(ctx context.Context, db *sql.DB, versioned bool)
 	return true, nil
 }
 
-func hasCurrentSchemaDefinitions(ctx context.Context, db *sql.DB, versioned bool) (bool, error) {
+func hasSchemaDefinitions(ctx context.Context, db *sql.DB, versioned bool, schemaVersion int) (bool, error) {
 	expected := map[string]string{
 		"projects":                     `CREATE TABLE projects (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
 		"memories":                     `CREATE TABLE memories (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE RESTRICT, type TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL, importance INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL DEFAULT '', access_count INTEGER NOT NULL DEFAULT 0, last_accessed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT)`,
@@ -270,6 +355,10 @@ func hasCurrentSchemaDefinitions(ctx context.Context, db *sql.DB, versioned bool
 		"idx_memories_project_deleted": `CREATE INDEX idx_memories_project_deleted ON memories(project_id, deleted_at)`,
 		"idx_memories_project_type":    `CREATE INDEX idx_memories_project_type ON memories(project_id, type)`,
 		"memory_fts":                   `CREATE VIRTUAL TABLE memory_fts USING fts5(memory_id UNINDEXED, project_key UNINDEXED, type, title, summary, short_summary, keywords, tags, entities, aliases, search_phrases, content, tokenize='unicode61')`,
+	}
+	if schemaVersion >= 2 {
+		expected["projects"] = `CREATE TABLE projects (id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT)`
+		expected["idx_projects_deleted"] = `CREATE INDEX idx_projects_deleted ON projects(deleted_at, key)`
 	}
 	if versioned {
 		expected["schema_migrations"] = `CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)`
@@ -292,10 +381,10 @@ func canonicalSchemaSQL(value string) string {
 	return strings.ReplaceAll(value, "ifnotexists", "")
 }
 
-func classifyLedger(ctx context.Context, db *sql.DB) (schemaState, error) {
+func classifyLedger(ctx context.Context, db *sql.DB) (int, schemaState, error) {
 	rows, err := db.QueryContext(ctx, `SELECT version, name, checksum FROM schema_migrations ORDER BY version`)
 	if err != nil {
-		return schemaUnknown, fmt.Errorf("reading migration ledger: %w", err)
+		return 0, schemaUnknown, fmt.Errorf("reading migration ledger: %w", err)
 	}
 	defer rows.Close()
 	type entry struct {
@@ -306,21 +395,24 @@ func classifyLedger(ctx context.Context, db *sql.DB) (schemaState, error) {
 	for rows.Next() {
 		var item entry
 		if err := rows.Scan(&item.version, &item.name, &item.checksum); err != nil {
-			return schemaUnknown, fmt.Errorf("scanning migration ledger: %w", err)
+			return 0, schemaUnknown, fmt.Errorf("scanning migration ledger: %w", err)
 		}
 		entries = append(entries, item)
 	}
 	if err := rows.Err(); err != nil {
-		return schemaUnknown, err
+		return 0, schemaUnknown, err
 	}
-	if len(entries) != len(migrations) {
-		return schemaFuture, nil
+	if len(entries) > len(migrations) {
+		return len(entries), schemaFuture, nil
+	}
+	if len(entries) == 0 {
+		return 0, schemaUnknown, nil
 	}
 	for index, entry := range entries {
 		migration := migrations[index]
 		if entry.version != migration.version || entry.name != migration.name || entry.checksum != migrationChecksum(migration) {
-			return schemaUnknown, nil
+			return 0, schemaUnknown, nil
 		}
 	}
-	return schemaCurrentVersioned, nil
+	return len(entries), schemaCurrentVersioned, nil
 }

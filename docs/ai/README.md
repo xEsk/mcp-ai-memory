@@ -18,7 +18,7 @@ The server is not a general note-taking application. It is optimized for AI retr
 
 ## Architecture Snapshot
 
-The application is a single binary MCP server. `cmd/memory-mcp` wires startup, `internal/app` builds services, and `internal/mcpserver` exposes MCP tools.
+The primary application is one binary with two exclusive modes. `memory-mcp` without arguments is the stdio MCP server; `memory-mcp manage` is the offline terminal manager. `cmd/memory-mcp` dispatches startup, `internal/app` builds services, `internal/mcpserver` exposes MCP tools, and `internal/manage` renders management flows.
 
 Project isolation is a core invariant. Memory operations resolve the project key first and then use `project_id`/`project_key` filters in persistence and search paths.
 
@@ -26,11 +26,12 @@ Access metrics record aggregate server exposure of each memory; they do not prov
 
 ## Repository Structure
 
-- `cmd/memory-mcp/`: MCP stdio process entrypoint.
+- `cmd/memory-mcp/`: MCP stdio and offline management entrypoint.
 - `cmd/memory-monitor/`: optional local trace-monitor process.
 - `cmd/memory-maintenance/`: explicit offline database inspection, backup, restore, and FTS rebuild command.
 - `internal/app/`: configuration and dependency wiring.
 - `internal/mcpserver/`: MCP tool schemas and handlers.
+- `internal/manage/`: line-oriented ANSI terminal management interface.
 - `internal/project/`: project model, service, and SQLite repository.
 - `internal/memory/`: memory model, validation, service, and SQLite repository.
 - `internal/search/`: FTS5 search and hybrid-search extension point.
@@ -96,12 +97,12 @@ Need previous decisions:
 
 - Always preserve project-scoped memory isolation.
 - Use `mcp-ai-memory` as the canonical Project Memory MCP key for this repository.
-- Never physically delete memories in v1 behavior; use soft delete.
+- Normal memory and project deletion is soft deletion. Physical deletion is reserved for explicitly confirmed offline cleanup.
 - Do not bypass enrichment/index synchronization on memory writes.
 - Preserve memory access metrics when changing get/list/search behavior.
 - Do not write logs or diagnostics to stdout in stdio MCP mode.
 - Trace monitor delivery must remain asynchronous and fail-silent; monitor failures must never affect MCP behavior.
-- Database startup and offline maintenance are mutually exclusive; use only an explicit absolute database path.
+- Normal MCP runtimes may share a current database. Schema initialization or migration and offline maintenance remain exclusive; use only an explicit absolute database path.
 - Keep generated operational memory in English.
 
 ## Warning

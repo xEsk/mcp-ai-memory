@@ -3,7 +3,9 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -12,6 +14,9 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// ErrSchemaMutationRequired reports that a store cannot be opened by a shared runtime.
+var ErrSchemaMutationRequired = errors.New("database schema requires initialization or migration")
+
 // OpenSQLite opens the local database and applies the initial schema if missing.
 func OpenSQLite(ctx context.Context, path string) (*sql.DB, error) {
 	if !filepath.IsAbs(path) {
@@ -19,6 +24,9 @@ func OpenSQLite(ctx context.Context, path string) (*sql.DB, error) {
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("creating database directory: %w", err)
+	}
+	if err := validateDatabaseHasSingleLink(path); err != nil {
+		return nil, err
 	}
 	lock, err := acquireMigrationLock(path)
 	if err != nil {
@@ -35,21 +43,13 @@ func OpenSQLite(ctx context.Context, path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if state != schemaEmpty && state != schemaCurrentUnversioned && state != schemaCurrentVersioned {
+	if state != schemaEmpty && state != schemaLegacyUnversioned && state != schemaCurrentUnversioned && state != schemaVersionedNeedsMigration && state != schemaCurrentVersioned {
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedSchema, state)
 	}
 
-	db, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	db, err := openRuntimeSQLite(ctx, path)
 	if err != nil {
-		return nil, fmt.Errorf("opening sqlite database: %w", err)
-	}
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
-	db.SetConnMaxLifetime(30 * time.Minute)
-
-	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("pinging sqlite database: %w", err)
+		return nil, err
 	}
 	if existedBeforeOpen && state != schemaCurrentVersioned {
 		if _, err := CreateBackup(ctx, db, path); err != nil {
@@ -60,6 +60,54 @@ func OpenSQLite(ctx context.Context, path string) (*sql.DB, error) {
 	if err := applyClassifiedMigrations(ctx, db, state); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("applying migrations: %w", err)
+	}
+	return db, nil
+}
+
+// OpenCurrentSQLite opens an already-current versioned store without mutating its schema.
+func OpenCurrentSQLite(ctx context.Context, path string) (*sql.DB, error) {
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("database path must be absolute")
+	}
+	if err := validateDatabaseHasSingleLink(path); err != nil {
+		return nil, err
+	}
+	databaseURI := (&url.URL{Scheme: "file", Path: path}).String()
+	db, err := openSQLiteConnection(ctx, databaseURI, "mode=rw&")
+	if err != nil {
+		if _, statErr := os.Stat(path); os.IsNotExist(statErr) {
+			return nil, fmt.Errorf("%w: %s", ErrSchemaMutationRequired, schemaEmpty)
+		}
+		return nil, err
+	}
+	state, err := classifyDatabase(ctx, db)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if state != schemaCurrentVersioned {
+		_ = db.Close()
+		return nil, fmt.Errorf("%w: %s", ErrSchemaMutationRequired, state)
+	}
+	return db, nil
+}
+
+func openRuntimeSQLite(ctx context.Context, path string) (*sql.DB, error) {
+	return openSQLiteConnection(ctx, path, "")
+}
+
+func openSQLiteConnection(ctx context.Context, path, queryPrefix string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite", path+"?"+queryPrefix+"_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	if err != nil {
+		return nil, fmt.Errorf("opening sqlite database: %w", err)
+	}
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(30 * time.Minute)
+
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("pinging sqlite database: %w", err)
 	}
 	return db, nil
 }

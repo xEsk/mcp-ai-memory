@@ -105,6 +105,9 @@ func validateExistingDatabasePath(path string) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("database path is not a regular file: %s", path)
 	}
+	if hasMultipleHardLinks(info) {
+		return fmt.Errorf("%w; maintenance requires one authoritative database path", ErrMultipleHardLinks)
+	}
 	return nil
 }
 
@@ -122,6 +125,9 @@ func RestoreBackup(ctx context.Context, path, backupPath string) (quarantinePath
 		return "", err
 	}
 	defer operationLock.Close()
+	if err := validateDatabaseHasSingleLink(path); err != nil {
+		return "", err
+	}
 	lock, err := acquireMigrationLock(path)
 	if err != nil {
 		return "", err
